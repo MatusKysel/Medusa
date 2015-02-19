@@ -230,6 +230,7 @@ static int medusa_l1_inode_create(struct inode *inode, struct dentry *dentry,
 			    umode_t mode)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if (medusa_create(dentry, mode) == MED_NO)
@@ -241,12 +242,22 @@ static int medusa_l1_inode_create(struct inode *inode, struct dentry *dentry,
 static int medusa_l1_inode_link(struct dentry *old_dentry, struct inode *inode,
 			  struct dentry *new_dentry)
 {
+	MEDUSA_CHECK(old_dentry)
+
+	if (!work) {
+		return 0;
+	}
+	
+	if (medusa_link(old_dentry, new_dentry->d_name.name) == MED_NO)
+		return -EPERM;
+
 	return 0;
 }
 
 static int medusa_l1_inode_unlink(struct inode *inode, struct dentry *dentry)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 
 	if (!work) {
 		return 0;
@@ -260,9 +271,7 @@ static int medusa_l1_inode_symlink(struct inode *inode, struct dentry *dentry,
 			     const char *name)
 {
 	MEDUSA_CHECK(dentry)
-//	if (!strcmp(name, "build.sh")) {
-//		work = 1;
-//	}	
+	return 0;
 	if (!work) {
 		return 0;
 	}
@@ -277,6 +286,7 @@ static int medusa_l1_inode_mkdir(struct inode *inode, struct dentry *dentry,
 			   	umode_t mask)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if(medusa_mkdir(dentry, mask) == MED_NO)
@@ -287,6 +297,7 @@ static int medusa_l1_inode_mkdir(struct inode *inode, struct dentry *dentry,
 static int medusa_l1_inode_rmdir(struct inode *inode, struct dentry *dentry)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if (medusa_rmdir(dentry) == MED_NO)
@@ -298,6 +309,7 @@ static int medusa_l1_inode_mknod(struct inode *inode, struct dentry *dentry,
 			   umode_t mode, dev_t dev)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if(medusa_mknod(dentry, dev, mode) == MED_NO)
@@ -310,6 +322,7 @@ static int medusa_l1_inode_rename(struct inode *old_inode, struct dentry *old_de
 {
 	MEDUSA_CHECK(old_dentry)
 	MEDUSA_CHECK(new_dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if (medusa_rename(old_dentry, new_dentry->d_name.name) == MED_NO)
