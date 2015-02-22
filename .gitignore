@@ -12,6 +12,7 @@
 # Normal rules
 #
 .*
+!.config
 *.o
 *.o.*
 *.a
