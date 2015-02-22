@@ -42,11 +42,26 @@ ifeq ($(strip $(architecture)),arm)
     NEED_DIRECT_GZIP_IMAGE=NO
     DEBCONFIG= $(CONFDIR)/config.netwinder
   else
-    kimage := vmlinuz
-    target = zImage
+    ifeq (uImage,$(IMAGE_TYPE))
+      kimage := uImage
+    else
+      kimage := vmlinuz
+    endif
+    # Default to zImage and vmlinuz-$(KERNRELEASE) unless overridden
+    ifeq (,$(IMAGE_TYPE))
+      target = zImage
+      kimagesrc = arch/$(KERNEL_ARCH)/boot/zImage
+      kimagedest = $(INT_IMAGE_DESTDIR)/vmlinuz-$(KERNELRELEASE)
+    else
+      target = $(IMAGE_TYPE)
+      kimagesrc = arch/$(KERNEL_ARCH)/boot/$(IMAGE_TYPE)
+      ifeq (uImage,$(IMAGE_TYPE))
+        kimagedest = $(INT_IMAGE_DESTDIR)/uImage-$(KERNELRELEASE)
+      else
+        kimagedest = $(INT_IMAGE_DESTDIR)/vmlinuz-$(KERNELRELEASE)
+      endif
+    endif
     NEED_DIRECT_GZIP_IMAGE=NO
-    kimagesrc = arch/$(KERNEL_ARCH)/boot/zImage
-    kimagedest = $(INT_IMAGE_DESTDIR)/vmlinuz-$(KERNELRELEASE)
     DEBCONFIG = $(CONFDIR)/config.$(DEB_HOST_ARCH)
   endif
   kelfimagesrc = vmlinux

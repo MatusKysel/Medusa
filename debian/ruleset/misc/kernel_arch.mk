@@ -56,6 +56,10 @@ ifeq ($(strip $(architecture)),armeb)
   KERNEL_ARCH := arm
 endif
 
+ifeq ($(strip $(architecture)),armhf)
+  KERNEL_ARCH := arm
+endif
+
 ifeq ($(strip $(architecture)),hppa)
   KERNEL_ARCH := parisc
 endif

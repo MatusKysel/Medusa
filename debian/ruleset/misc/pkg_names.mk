@@ -1,6 +1,6 @@
 ######################### -*- Mode: Makefile-Gmake -*- ########################
-## pkg_names.mk --- 
-## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com ) 
+## pkg_names.mk ---
+## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com )
 ## Created On       : Mon Oct 31 17:45:52 2005
 ## Created On Node  : glaurung.internal.golden-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,15 +8,15 @@
 ## Last Machine Used: anzu.internal.golden-gryphon.com
 ## Update Count     : 5
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
+## HISTORY          :
 ## Description      : sets up package names for the packages we can
 ##                    build (based on kernel version), the locations under
 ##                    ./debian where these packages shall be built, and the
 ##                    corresponding relative directory paths
-## 
+##
 ## arch-tag: c0247c14-1314-4245-9d18-6687ac9a9262
-## 
-## 
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -44,14 +44,14 @@
 INT_SUBARCH :=
 
 ifneq ($(strip $(ARCH_IN_NAME)),)
-ifneq ($(strip $(KPKG_SUBARCH)),)
-INT_SUBARCH := -$(KPKG_SUBARCH)
-endif
+  ifneq ($(strip $(KPKG_SUBARCH)),)
+    INT_SUBARCH := -$(KPKG_SUBARCH)
+  endif
 endif
 
-# The name of the package (for example, 'emacs').
+# The name of the packages
 s_package  = $(INT_STEM)-source-$(KERNELRELEASE)
-h_package  = $(INT_STEM)-headers-$(KERNELRELEASE)
+h_package  = $(INT_STEM)-headers-$(KERNELRELEASE)$(INT_SUBARCH)
 ifeq ($(strip $(KERNEL_ARCH)),um)
 	i_package  = $(INT_STEM)-uml-$(KERNELRELEASE)$(INT_SUBARCH)
 	b_package  = $(INT_STEM)-uml-$(KERNELRELEASE)$(INT_SUBARCH)-dbg

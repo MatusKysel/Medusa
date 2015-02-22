@@ -30,7 +30,7 @@
 ###############################################################################
 
 # The version of kernel-package this belongs to
-kpkg_version := 12.036+nmu3
+kpkg_version := 13.014+nmu1
 
 CROSS_COMPILE   ?=
 ifneq ($(CROSS_COMPILE),-)

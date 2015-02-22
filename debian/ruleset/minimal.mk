@@ -1,6 +1,6 @@
 ######################### -*- Mode: Makefile-Gmake -*- ########################
-## minimal.mk --- 
-## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com ) 
+## minimal.mk ---
+## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com )
 ## Created On       : Tue Nov  1 03:31:22 2005
 ## Created On Node  : glaurung.internal.golden-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,12 +8,12 @@
 ## Last Machine Used: anzu.internal.golden-gryphon.com
 ## Update Count     : 35
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
-## Description      : 
-## 
+## HISTORY          :
+## Description      :
+##
 ## arch-tag: 8b6406ba-8211-4d71-be2b-cec0bf634c2d
-## 
-## 
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -57,9 +57,13 @@ ifneq ($(strip $(filter ppc powerpc ppc64 powerpc64,$(architecture))),)
 endif
 
 FILES_TO_CLEAN  = modules/modversions.h modules/ksyms.ver  \
-                  scripts/cramfs/cramfsck scripts/cramfs/mkcramfs 
-STAMPS_TO_CLEAN = 
+                  scripts/cramfs/cramfsck scripts/cramfs/mkcramfs
+STAMPS_TO_CLEAN =
 DIRS_TO_CLEAN   = debian/stamp
+
+ifneq (YES,$(strip $(INITRD)))
+  RAMFS_DEPS := initramfs-tools | linux-initramfs-tool,
+endif
 
 # The assumption is that we have already cleaned out the source tree;
 # we are only concerned now with running clean and saving the .config
@@ -85,7 +89,7 @@ else
 endif
 	rm -f $(FILES_TO_CLEAN) $(STAMPS_TO_CLEAN)
 
-debian/stamp/conf/minimal_debian: 
+debian/stamp/conf/minimal_debian:
 	$(REASON)
 	@echo "This is kernel package version $(kpkg_version)."
 	test -d debian             || mkdir debian
@@ -106,7 +110,7 @@ debian/stamp/conf/minimal_debian:
 		-e 's/=CV/$(VERSION).$(PATCHLEVEL)/g'			    \
 		-e 's/=M/$(maintainer) <$(email)>/g'			    \
 		-e 's/=ST/$(INT_STEM)/g'      -e 's/=B/$(KERNEL_ARCH)/g'    \
-                  $(CONTROL) > debian/control
+                -e 's/=R/$(RAMFS_DEPS)/g'    $(CONTROL) > debian/control
 	test -f debian/changelog ||  sed -e 's/=V/$(version)/g'       \
             -e 's/=D/$(debian)/g'        -e 's/=A/$(DEB_HOST_ARCH)/g'       \
             -e 's/=ST/$(INT_STEM)/g'     -e 's/=B/$(KERNEL_ARCH)/g'         \
@@ -123,6 +127,7 @@ ifneq (,$(strip $(KPKG_OVERLAY_DIR)))
 		-e 's/=CV/$(VERSION).$(PATCHLEVEL)/g'			    \
 		-e 's/=M/$(maintainer) <$(email)>/g'			    \
 		-e 's/=ST/$(INT_STEM)/g'      -e 's/=B/$(KERNEL_ARCH)/g'    \
+                -e 's/=R/$(RAMFS_DEPS)/g'                                   \
                   $(strip $(KPKG_OVERLAY_DIR))/Control > debian/control
 	test ! -f $(strip $(KPKG_OVERLAY_DIR))/changelog ||                 \
             sed -e 's/=V/$(version)/g'       \
@@ -134,7 +139,7 @@ ifneq (,$(strip $(KPKG_OVERLAY_DIR)))
             (cd debian; $(strip $(KPKG_OVERLAY_DIR))/post-install)
 endif
 	chmod 0644 debian/control debian/changelog
-	test -d ./debian/stamp || mkdir debian/stamp 
+	test -d ./debian/stamp || mkdir debian/stamp
 	$(MAKE) -f debian/rules debian/stamp/conf/kernel-conf
 	$(MAKE) -f debian/rules debian/stamp/conf/full-changelog
 	echo done > $@

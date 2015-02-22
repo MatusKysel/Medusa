@@ -1,6 +1,6 @@
 ######################### -*- Mode: Makefile-Gmake -*- ########################
-## doc.mk --- 
-## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com ) 
+## doc.mk ---
+## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com )
 ## Created On       : Mon Oct 31 16:38:08 2005
 ## Created On Node  : glaurung.internal.golden-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,12 +8,12 @@
 ## Last Machine Used: anzu.internal.golden-gryphon.com
 ## Update Count     : 9
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
+## HISTORY          :
 ## Description      : This file is responsible for creating the kernel-doc packages
-## 
+##
 ## arch-tag: ecb720c6-075d-4641-adb4-55f313499e8e
-## 
-## 
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -30,7 +30,7 @@
 ##
 ###############################################################################
 
-debian/stamp/install/$(d_package): 
+debian/stamp/install/$(d_package):
 	$(REASON)
 	@echo "This is kernel package version $(kpkg_version)."
 	@test -d debian/stamp/install || mkdir debian/stamp/install
@@ -75,7 +75,7 @@ endif
 	test ! -d $(DOCDIR)/Documentation/DocBook ||                           \
 	   mv $(DOCDIR)/Documentation/DocBook $(DOCDIR)/html
 ######################################################################
-#### 
+####
 ######################################################################
 		find -name Kconfig -print0 | xargs -0r cat | \
 		     (umask 000 ; cat > $(DOCDIR)/Kconfig.collected)
@@ -88,7 +88,7 @@ ifneq ($(strip $(doc_clean_hook)),)
                test -x $(doc_clean_hook) && $(doc_clean_hook))
 endif
 	-gzip -9qfr $(DOCDIR)
-	-find $(DOCDIR)      -type f -name \*.gz -perm +111 -exec gunzip {} \;
+	-find $(DOCDIR)      -type f -name \*.gz -perm /111 -exec gunzip {} \;
 	-find $(DOCDIR)/html -type f -name \*.gz            -exec gunzip {} \;
 	find   $(DOCDIR)/              -type d -exec chmod 0755 {} \;
 	$(install_file) $(DEBDIR)/pkg/doc/copyright $(DOCDIR)/copyright
@@ -96,7 +96,7 @@ endif
 	-rmdir   $(MANDIR)
 	@echo done > $@
 
-debian/stamp/binary/$(d_package): 
+debian/stamp/binary/$(d_package):
 	$(REASON)
 	$(checkdir)
 	$(TESTROOT)

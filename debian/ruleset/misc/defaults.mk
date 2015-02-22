@@ -1,6 +1,6 @@
 ######################### -*- Mode: Makefile-Gmake -*- ########################
-## defaults.mk --- 
-## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com ) 
+## defaults.mk ---
+## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com )
 ## Created On       : Mon Oct 31 17:43:59 2005
 ## Created On Node  : glaurung.internal.golden-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,13 +8,13 @@
 ## Last Machine Used: glaurung.internal.golden-gryphon.com
 ## Update Count     : 8
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
+## HISTORY          :
 ## Description      : sets default values for variables _before_ the
 ##                    user configuration files are read.
-## 
+##
 ## arch-tag: a28f832f-5d67-427c-9370-0defffa8471c
-## 
-## 
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -68,7 +68,7 @@ ifneq (,$(findstring unknown,$(email)))
   ifneq ($(strip $(DEBEMAIL)),)
       email = $(DEBEMAIL)
   else
-    ifneq ($(strip $(EMAIL)),) 
+    ifneq ($(strip $(EMAIL)),)
       email = $(EMAIL)
    endif
   endif
@@ -110,7 +110,7 @@ CROSS_ARG:=
 # else. The real variable that we use for calling make on the top level
 # Makefile, for instance, really depends on KERNEL_ARCH, usually set by
 # arch specific makefile snippets.
-ifdef KPKG_ARCH
+ifneq ($(strip $(KPKG_ARCH)),)
   architecture:=$(KPKG_ARCH)
 else
   #architecture:=$(shell CC=$(HOSTCC) dpkg --print-gnu-build-architecture)
@@ -128,7 +128,7 @@ ifndef CROSS_COMPILE
       #KERNEL_CROSS:=$(architecture)-$(strip $(DEB_HOST_ARCH_OS))-
       KERNEL_CROSS:=$(DEB_HOST_GNU_TYPE)-
       ifeq ($(architecture), amd64)
-        KERNEL_CROSS:=$(architecture)-$(strip $(DEB_HOST_ARCH_OS))-
+	KERNEL_CROSS:=$(architecture)-$(strip $(DEB_HOST_ARCH_OS))-
       endif
     endif
   endif

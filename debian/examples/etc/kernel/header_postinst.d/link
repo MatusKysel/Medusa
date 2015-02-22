@@ -9,7 +9,7 @@ if [ -n "$DEB_MAINT_PARAMS" ]; then
     fi
 fi
 
-architecture=$(dpkg --print-installation-architecture)
+architecture=$(dpkg --print-architecture)
 
 case $architecture in
     powerpc)
@@ -61,6 +61,6 @@ elif [ -e 'asm' ]; then
         rm -f asm
         ln -sf  "asm-$architecture" 'asm'
     fi
-fi    
+fi
 
 exit 0

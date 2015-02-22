@@ -1,6 +1,6 @@
 ############################ -*- Mode: Makefile -*- ###########################
-## pkgvars.mk --- 
-## Author           : Manoj Srivastava ( srivasta@glaurung.green-gryphon.com ) 
+## pkgvars.mk ---
+## Author           : Manoj Srivastava ( srivasta@glaurung.green-gryphon.com )
 ## Created On       : Sat Nov 15 02:56:30 2003
 ## Created On Node  : glaurung.green-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,13 +8,13 @@
 ## Last Machine Used: glaurung.internal.golden-gryphon.com
 ## Update Count     : 11
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
+## HISTORY          :
 ## Description      : This is what allows us toseparate out the top level
 ##                    targets, by determining which packages needto be built.
-## 
+##
 ## arch-tag: 75fcc720-7389-4eaa-a7ac-c556d3eac331
-## 
-## 
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -92,6 +92,8 @@ package = $(notdir $@)
 ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
     NUMJOBS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
     MAKEFLAGS += -j$(NUMJOBS)
+    SERIAL_BUILD_OPTIONS:=$(strip $(filter-out parallel=%,$(DEB_BUILD_OPTIONS)))
+    DEB_BUILD_OPTIONS:=$(SERIAL_BUILD_OPTIONS)
 endif
 
 #Local variables:

@@ -63,6 +63,9 @@ USE_KBUILD=$(shell if [ $(VERSION) -lt 2 ]; then			   \
 	   else								   \
 			   echo "YES";					   \
 	   fi)
+ifneq (YES,$(strip $(INITRD)))
+  RAMFS_DEPS := initramfs-tools | linux-initramfs-tool,
+endif
 
 LGUEST_SUBDIR = $(word 1,$(wildcard Documentation/lguest Documentation/virtual/lguest tools/lguest))
 
@@ -164,7 +167,12 @@ ifeq ($(strip $(MODULES_ENABLED)),YES)
 	@echo "KPKG_SELECTED_MODULES = $(KPKG_SELECTED_MODULES)" >> debian/stamp/conf/mak
 endif
 	@echo "Debian Revision	= $(debian)"	    >> debian/stamp/conf/mak
-	@echo "KPKG_ARCH	= $(KPKG_ARCH)"	       >> debian/stamp/conf/mak
+	@echo "DEB_HOST_ARCH	= $(DEB_HOST_ARCH)" >> debian/stamp/conf/mak
+	@echo "DEB_BUILD_ARCH	= $(DEB_BUILD_ARCH)" >> debian/stamp/conf/mak
+	@echo "KPKG_ARCH	= $(KPKG_ARCH)"	    >> debian/stamp/conf/mak
+ifneq ($(strip $(KPKG_SUBARCH)),)
+	@echo "KPKG_SUBARCH	= $(KPKG_SUBARCH)"  >> debian/stamp/conf/mak
+endif
 # Fetch the rest of the information from the kernel's Makefile
 	$(eval $(which_debdir))
 ifeq ($(DEB_HOST_ARCH_OS), linux)
@@ -240,7 +248,7 @@ debian/control debian/changelog debian/rules debian/stamp/conf/full-changelog:
 		-e 's/=CV/$(VERSION).$(PATCHLEVEL)/g'			    \
 		-e 's/=M/$(maintainer) <$(email)>/g'			    \
 		-e 's/=ST/$(INT_STEM)/g'      -e 's/=B/$(KERNEL_ARCH)/g'    \
-                  $(CONTROL) > debian/control
+                -e 's/=R/$(RAMFS_DEPS)/g'  $(CONTROL) > debian/control
 	sed -e 's/=V/$(KERNELRELEASE)/g' -e 's/=D/$(debian)/g'	      \
 	    -e 's/=A/$(DEB_HOST_ARCH)/g' -e 's/=M/$(maintainer) <$(email)>/g' \
 	    -e 's/=ST/$(INT_STEM)/g'	 -e 's/=B/$(KERNEL_ARCH)/g'	      \
@@ -256,7 +264,8 @@ ifneq (,$(strip $(KPKG_OVERLAY_DIR)))
 		-e 's/=CV/$(VERSION).$(PATCHLEVEL)/g'			    \
 		-e 's/=M/$(maintainer) <$(email)>/g'			    \
 		-e 's/=ST/$(INT_STEM)/g'      -e 's/=B/$(KERNEL_ARCH)/g'    \
-                  $(strip $(KPKG_OVERLAY_DIR))/Control > debian/control
+                -e 's/=R/$(RAMFS_DEPS)/g'                                   \
+                     $(strip $(KPKG_OVERLAY_DIR))/Control > debian/control
 	test ! -f $(strip $(KPKG_OVERLAY_DIR))/changelog ||                 \
             sed -e 's/=V/$(KERNELRELEASE)/g'       \
             -e 's/=D/$(debian)/g'        -e 's/=A/$(DEB_HOST_ARCH)/g'       \
@@ -319,7 +328,7 @@ ifeq ($(DEB_HOST_ARCH_OS), linux)
   else
 	$(MAKE) $(do_parallel) $(EXTRAV_ARG) $(FLAV_ARG) ARCH=$(KERNEL_ARCH) \
 			    $(CROSS_ARG) $(target)
-    ifneq ($(strip $(shell grep -E ^[^\#]*CONFIG_MODULES $(CONFIG_FILE))),)
+    ifneq ($(strip $(shell grep -E '^[^\#]*CONFIG_MODULES[^_]' $(CONFIG_FILE))),)
 	$(MAKE) $(do_parallel) $(EXTRAV_ARG) $(FLAV_ARG) ARCH=$(KERNEL_ARCH) \
 			    $(CROSS_ARG) modules
     endif
@@ -357,7 +366,7 @@ endif
 	echo done > $@
 
 
-real_stamp_clean: 
+real_stamp_clean:
 	$(REASON)
 	@echo running clean
 ifeq ($(strip $(DEB_HOST_ARCH_OS)), linux)

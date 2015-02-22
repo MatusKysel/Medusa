@@ -1,6 +1,6 @@
 ######################### -*- Mode: Makefile-Gmake -*- ########################
-## config.mk --- 
-## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com ) 
+## config.mk ---
+## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com )
 ## Created On       : Mon Oct 31 17:30:53 2005
 ## Created On Node  : glaurung.internal.golden-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,13 +8,13 @@
 ## Last Machine Used: anzu.internal.golden-gryphon.com
 ## Update Count     : 8
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
+## HISTORY          :
 ## Description      : Various internal variable set based on defaults and the
 ##                    user configuration files, or from environment vars.
-## 
+##
 ## arch-tag: 5fac76ea-f1e8-49fe-bd82-12ae6be8d701
-## 
-## 
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -181,15 +181,11 @@ delete_build_link := NO
 endif
 endif
 
-ifneq ($(strip $(IMAGE_TYPE)),)
-kimage = $(IMAGE_TYPE)
-endif
-
 have_new_config_target =
 # what kernel config target to run in our configure target.
 # The default is empty, unless set in kernel-pkg.conf
 ifeq ($(strip $(config_target)),)
-  # Variable not set in config file. 
+  # Variable not set in config file.
   config_target := oldconfig
   ifeq ($(strip $(HAVE_CONFIG)),yeS)
     ifneq ($(strip $(silentconfig)),)

@@ -1,6 +1,6 @@
 ######################### -*- Mode: Makefile-Gmake -*- ########################
-## modules.mk --- 
-## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com ) 
+## modules.mk ---
+## Author           : Manoj Srivastava ( srivasta@glaurung.internal.golden-gryphon.com )
 ## Created On       : Mon Oct 31 18:08:29 2005
 ## Created On Node  : glaurung.internal.golden-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,14 +8,14 @@
 ## Last Machine Used: anzu.internal.golden-gryphon.com
 ## Update Count     : 1
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
+## HISTORY          :
 ## Description      : deals with setting up variables, looking at
 ##                    directories, and creating a list of valid third party
 ##                    modules available for the kernel being built.
-## 
+##
 ## arch-tag: 9b687fd4-a7d0-4360-8ce6-3ce3a0e2cfac
-## 
-## 
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -67,8 +67,13 @@ endif
 
 
 # define MODULES_ENABLED if appropriate
-ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E ^[^\#]*CONFIG_MODULES $(CONFIG_FILE))),:)
+ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E '^[^\#]*CONFIG_MODULES[^_]' $(CONFIG_FILE))),:)
   MODULES_ENABLED := YES
+endif
+
+# Are modules to be signed?
+ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E '^[^\#]*CONFIG_MODULE_SIG[^_]' $(CONFIG_FILE))),:)
+  MODULES_SIGNED := YES
 endif
 
 # accept both space separated list of modules, as well as comma

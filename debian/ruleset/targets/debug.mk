@@ -1,6 +1,6 @@
 ######################### -*- Mode: Makefile-Gmake -*- ########################
-## debug.mk --- 
-## Author           : Manoj Srivastava ( srivasta@anzu.internal.golden-gryphon.com ) 
+## debug.mk ---
+## Author           : Manoj Srivastava ( srivasta@anzu.internal.golden-gryphon.com )
 ## Created On       : Thu Apr  9 01:54:37 2009
 ## Created On Node  : anzu.internal.golden-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,10 +8,10 @@
 ## Last Machine Used: anzu.internal.golden-gryphon.com
 ## Update Count     : 18
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
-## Description      : 
-## 
-## 
+## HISTORY          :
+## Description      :
+##
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -66,7 +66,7 @@ debian/stamp/install/$(b_package):
 #####################################################################
 ###   For linux, if modules are defined, install modules
 ######################################################################
-ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E ^[^\#]*CONFIG_MODULES $(CONFIG_FILE))),:)
+ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E '^[^\#]*CONFIG_MODULES[^_]' $(CONFIG_FILE))),:)
   ifneq ($(strip $(KERNEL_ARCH)),um)
 	$(restore_upstream_debianization)
 	$(MAKE) $(EXTRAV_ARG) INSTALL_MOD_PATH=$(TMPTOP)$(DEBUGDIR)                   \
@@ -80,7 +80,7 @@ ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E ^[^\#]*CO
 	test ! -f System.map ||	 chmod 644			                      \
 			$(TMPTOP)/$(DEBUGDIR)/lib/modules/$(KERNELRELEASE)/System.map;
 #	test ! -L $(TMPTOP)$(DEBUGDIR)/lib/modules/$(KERNELRELEASE)/build  ||         \
-#            rm -f $(TMPTOP)$(DEBUGDIR)/lib/modules/$(KERNELRELEASE)/build 
+#            rm -f $(TMPTOP)$(DEBUGDIR)/lib/modules/$(KERNELRELEASE)/build
 #	test ! -L $(TMPTOP)$(DEBUGDIR)/lib/modules/$(KERNELRELEASE)/source ||         \
 #            rm -f $(TMPTOP)$(DEBUGDIR)/lib/modules/$(KERNELRELEASE)/source
   endif
@@ -92,7 +92,7 @@ ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E ^[^\#]*CO
 endif
 	@echo done > $@
 
-debian/stamp/binary/$(b_package): 
+debian/stamp/binary/$(b_package):
 	$(REASON)
 	@echo "This is kernel package version $(kpkg_version)."
 	$(checkdir)
@@ -100,7 +100,7 @@ debian/stamp/binary/$(b_package):
 	@test -d debian/stamp/binary || mkdir debian/stamp/binary
 	$(make_directory) $(TMPTOP)/DEBIAN
 	$(eval $(deb_rule))
-	dpkg-gencontrol -isp -DArchitecture=$(DEB_HOST_ARCH) -p$(package) \
+	dpkg-gencontrol -isp -DArchitecture=$(GENCONTROL_ARCH) -p$(package) \
                                           -P$(TMPTOP)/
 	$(create_md5sum)                   $(TMPTOP)
 	chown -R root:root                  $(TMPTOP)

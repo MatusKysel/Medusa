@@ -1,6 +1,6 @@
 ############################ -*- Mode: Makefile -*- ###########################
-## archvars.mk --- 
-## Author           : Manoj Srivastava ( srivasta@golden-gryphon.com ) 
+## archvars.mk ---
+## Author           : Manoj Srivastava ( srivasta@golden-gryphon.com )
 ## Created On       : Sat Nov 15 02:40:56 2003
 ## Created On Node  : glaurung.green-gryphon.com
 ## Last Modified By : Manoj Srivastava
@@ -8,12 +8,12 @@
 ## Last Machine Used: anzu.internal.golden-gryphon.com
 ## Update Count     : 6
 ## Status           : Unknown, Use with caution!
-## HISTORY          : 
+## HISTORY          :
 ## Description      : calls dpkg-architecture and sets up various arch
 ##                    related variables
-## 
+##
 ## arch-tag: e16dd848-0fd6-4c0e-ae66-bef20d1f7c63
-## 
+##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
 ## the Free Software Foundation; either version 2 of the License, or
@@ -33,6 +33,8 @@
 
 DPKG_ARCH := dpkg-architecture
 
+DEB_ARCH_LIST := $(shell $(DPKG_ARCH) -L)
+
 ifeq ($(strip $(KPKG_ARCH)),um)
   MAKING_VIRTUAL_IMAGE:=YES
 endif
@@ -50,10 +52,12 @@ ifneq ($(strip $(CONFIG_UM)),)
   KPKG_ARCH=um
 endif
 
-ifdef KPKG_ARCH
+ifneq ($(strip $(KPKG_ARCH)),)
   ifeq ($(strip $(MAKING_VIRTUAL_IMAGE)),)
     ifneq ($(CROSS_COMPILE),-)
-      ha:=-a$(KPKG_ARCH)
+      ifneq ($(strip $(filter $(KPKG_ARCH), $(DEB_ARCH_LIST))),)
+        ha:=-a$(KPKG_ARCH)
+      endif
     endif
   endif
 endif
@@ -86,6 +90,15 @@ ifeq ($(DEB_HOST_ARCH_OS),)
     DEB_HOST_ARCH_OS := kfreebsd
   endif
 endif
+
+# The sub architecture should be reflected in the packages we build
+GENCONTROL_ARCH=$(DEB_HOST_ARCH)
+ifneq ($(strip $(KPKG_SUBARCH)),)
+   ifneq ($(strip $(filter $(KPKG_SUBARCH), $(DEB_ARCH_LIST))),)
+    GENCONTROL_ARCH=$(strip $(KPKG_SUBARCH))
+   endif
+endif
+
 
 REASON = @if [ -f $@ ]; then \
  echo "====== making $(notdir $@) because of $(notdir $?) ======";\

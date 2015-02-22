@@ -16,10 +16,10 @@ Provides: =ST-headers, =ST-headers-=CV
 Description: Header files related to Linux kernel, specifically,
  version =V
  .
- This package provides kernel header files for sites 
- that want the latest kernel headers for version 
+ This package provides kernel header files for sites
+ that want the latest kernel headers for version
  =V.
- Please read 
+ Please read
  /usr/share/doc/=ST-headers-=V/debian.README.gz
  for details
 
@@ -37,27 +37,28 @@ Description: Linux kernel source for version =V
  .
  You may configure the kernel to your setup by typing "make config"
  and following instructions, but you could get ncursesX.X-dev and try
- "make menuconfig" for a jazzier, and easier to use interface. There 
+ "make menuconfig" for a jazzier, and easier to use interface. There
  are options to use QT or GNOME based configuration interfaces, but they
- need additional packages to be installed. Also, please read the detailed 
+ need additional packages to be installed. Also, please read the detailed
  documentation in the file README.headers.gz in the documentation directory
  /usr/share/doc/=ST-source-=V/.
  .
  If you wish to use this package to create a custom Linux kernel, then
  it is suggested that you investigate the package kernel-package,
  which has been designed to ease the task of creating kernel image
- packages. 
+ packages.
 
 Package: =ST-image-=V=SA
 Architecture: =A
 Section: kernel
 Priority: optional
-Provides: =ST-image,  =ST-image-=CV
+Provides: =ST-image,  =ST-image-=CV, =ST-modules-=CV
 Pre-Depends: debconf (>= 0.2.17) | debconf-2.0
 Depends: =I coreutils (>= 5.96)
-Suggests: fdutils, =ST-doc-=V=SA | =ST-source-=V, ksymoops, =ST-image-=V=SA-dbg
+Recommends: =R kernel-common
+Suggests: fdutils, =ST-doc-=V=SA | =ST-source-=V, =ST-image-=V=SA-dbg, =ST-manual-=V
 Description: Linux kernel binary image for version =V=SA
- This package contains the Linux kernel image for version 
+ This package contains the Linux kernel image for version
  =V=SA.
  .
  It also contains the corresponding System.map file, and the modules
@@ -68,22 +69,23 @@ Description: Linux kernel binary image for version =V=SA
  and it is suggested that you install that package if you wish to
  create a custom kernel from the sources. Please look at kernel-img.conf(5),
  and /usr/share/doc/kernel-package/README.gz  from the package kernel-package
- for details on how to tailor the  installation of this or any other kernel 
+ for details on how to tailor the  installation of this or any other kernel
  image package
 
 Package: =ST-image-=V=SA-dbg
-Architecture: =A 
+Architecture: =A
 Section: debug
-Priority: optional 
-Depends: =ST-image-=V=SA
+Priority: optional
+Depends: initramfs-tools | linux-initramfs-tool, =ST-image-=V=SA
 Provides: =ST-debug,  =ST-debug-=CV, =ST-debug-=V=SA
+Conflicts: =ST-debug
 Suggests: systemtap
-Description: Linux kernel debug image for version =V=SA 
+Description: Linux kernel debug image for version =V=SA
  This package contains the Linux kernel debug image for version
   =V=SA.
  This means the debugging information for the modules in the kernel
  image package, and the uncompressed vmlinux image; it is not intended
- to be bootable. This is useful for debugging the Linux kernel. 
+ to be bootable. This is useful for debugging the Linux kernel.
 
 
 Package: =ST-doc-=V
@@ -91,7 +93,7 @@ Architecture: all
 Section: doc
 Priority: optional
 Provides: =ST-doc-=CV
-Suggests: =ST-image-=V=SA
+Suggests: =ST-image-=V=SA, =ST-manual-=V
 Description: Linux kernel specific documentation for version =V
  This package provides various Readme's in the =V
  kernel Documentation/ subdirectory: these typically contain
@@ -108,9 +110,9 @@ Section: doc
 Priority: optional
 Provides: =ST-manual-=CV
 Conflicts: =ST-manual-=CV
-Suggests: =ST-image-=V=SA
+Suggests: =ST-image-=V=SA, =ST-doc-=V
 Description: Linux kernel section 9 manual pages for version =V
- This package provides various Section 9 manual pages included with the kernel. 
+ This package provides various Section 9 manual pages included with the kernel.
 
 Package: =ST-uml-=V=SA
 Architecture: =A
@@ -123,4 +125,4 @@ Conflicts: user-mode-linux (<= 2.6)
 Replaces: user-mode-linux (<= 2.6)
 Description: Linux uml kernel binary image for version =V=SA
  This package contains the Linux uml kernel image for version =V=SA
- and the modules built by the packager.  
+ and the modules built by the packager.

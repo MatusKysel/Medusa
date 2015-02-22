@@ -30,11 +30,25 @@
 ##
 ###############################################################################
 
+# LOONGSON
+KPKG_SUBARCH:=$(shell if test -f .config; then \
+		perl -nle '/^CONFIG_CPU_(LOONGSON2)=y/ && print "$$1"' .config;\
+		fi)
+
 # xxs1500
 ifneq (,$(filter xxs1500,$(strip $(KPKG_SUBARCH))))
   kimage := vmlinux
   kimagesrc = $(strip arch/$(KERNEL_ARCH)/boot/$(kimage).srec)
 endif
+# loongson2
+ifneq (,$(filter LOONGSON2,$(strip $(KPKG_SUBARCH))))
+  kimage := vmlinuz
+  kimagesrc = vmlinuz
+  kimagedest = $(INT_IMAGE_DESTDIR)/vmlinuz-$(KERNELRELEASE)
+  loaderdep =
+  loader =
+  loaderdoc =
+ endif
 
 # Default value
 ifeq (,$(kimage))
@@ -45,7 +59,9 @@ ifeq (,$(kimagesrc))
 endif
 
 NEED_DIRECT_GZIP_IMAGE = NO
+ifeq (,$(kimagedest))
 kimagedest = $(INT_IMAGE_DESTDIR)/vmlinux-$(KERNELRELEASE)
+endif
 
 ifneq ($(shell if [ $(VERSION)  -ge  2 ]  && [ $(PATCHLEVEL) -ge 5 ] &&    \
                   [ $(SUBLEVEL) -ge 41 ]; then echo new;                   \

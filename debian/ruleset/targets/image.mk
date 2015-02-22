@@ -61,7 +61,7 @@ ifeq ($(strip $(KERNEL_ARCH)),um)
 	gzip -9fq			       $(MAN1DIR)/linux-$(KERNELRELEASE).1
 endif
 	test ! -d $(DEBDIR)/examples/ ||                                     \
-          (cd $(DEBDIR); tar cf - examples | (cd $(DOCDIR);  umask 000; tar xsf -)); 
+          (cd $(DEBDIR); tar cf - examples | (cd $(DOCDIR);  umask 000; tar xsf -));
 	$(install_file) $(DEBDIR)/pkg/image/README    $(DOCDIR)/debian.README
 ifeq ($(strip $(KERNEL_ARCH)),um)
 	$(install_file) $(config)	 $(DOCDIR)/config-$(KERNELRELEASE)
@@ -89,7 +89,7 @@ endif
 ######################################################################
 ###   For linux, if modules are defined, install modules
 ######################################################################
-ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E ^[^\#]*CONFIG_MODULES $(CONFIG_FILE))),:)
+ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E '^[^\#]*CONFIG_MODULES[^_]' $(CONFIG_FILE))),:)
   ifeq	($(DEB_HOST_ARCH_OS):$(strip $(HAVE_NEW_MODLIB)),linux:)
 	$(old_mod_inst_cmds)
   else
@@ -102,6 +102,8 @@ ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E ^[^\#]*CO
 	$(MAKE) $(EXTRAV_ARG) INSTALL_MOD_PATH=$(INSTALL_MOD_PATH)	              \
 		INSTALL_FW_PATH=$(INSTALL_MOD_PATH)/lib/firmware/$(KERNELRELEASE)     \
 		$(CROSS_ARG) ARCH=$(KERNEL_ARCH) INSTALL_MOD_STRIP=1 modules_install
+# Are modules to be signed? if do, do nothing, else add in a link to the debug module
+      ifeq ($(strip $(shell grep -E '^[^\#]*CONFIG_MODULE_SIG[^_]' $(CONFIG_FILE))),)
 	$(MAKE) $(EXTRAV_ARG) INSTALL_MOD_PATH=$(TMPTOP)$(DEBUGDIR)                   \
                 $(CROSS_ARG) ARCH=$(KERNEL_ARCH) modules_install
 	find $(TMPTOP)$(DEBUGDIR) -type f -name \*.ko |                               \
@@ -113,6 +115,7 @@ ifneq ($(filter kfreebsd, $(DEB_HOST_ARCH_OS)):$(strip $(shell grep -E ^[^\#]*CO
                 $(OBJCOPY) --add-gnu-debuglink=$$file $$origfile;                        \
              done
 	rm -rf $(TMPTOP)$(DEBUGDIR)
+      endif
       ifneq ($(strip $(KERNEL_CROSS)),)
 	mv System.precious System.map
       endif
@@ -165,27 +168,21 @@ endif
 ifeq ($(strip $(KERNEL_ARCH)),um)
 	cp $(kimagesrc) $(kimagedest)
 else
-  ifeq ($(strip $(HAVE_INST_PATH)),)
 	test ! -f System.map ||	 cp System.map			       \
 			$(TMPTOP)/$(IMAGEDIR)/System.map-$(KERNELRELEASE);
-	test ! -f System.map ||	 chmod 644			       \
+	test ! -f System.map ||	 chmod 600			       \
 			$(TMPTOP)/$(IMAGEDIR)/System.map-$(KERNELRELEASE);
 	cp $(kimagesrc) $(kimagedest)
-  else
 	$(restore_upstream_debianization)
-	$(MAKE) $(EXTRAV_ARG) INSTALL_MOD_PATH=$(INSTALL_MOD_PATH)	     \
-		INSTALL_FW_PATH=$(INSTALL_MOD_PATH)/lib/firmware/$(KERNELRELEASE)  \
-		INSTALL_PATH=$(INT_IMAGE_DESTDIR) $(CROSS_ARG) $(KPKG_KBUILD_INSTALL_TARGET)
-  endif
 endif
 ifeq ($(strip $(HAVE_COFF_IMAGE)),YES)
 	cp $(coffsrc)	$(coffdest)
-	chmod 644	$(coffdest)
+	chmod 600	$(coffdest)
 endif
 ifeq ($(strip $(int_install_vmlinux)),YES)
   ifneq ($(strip $(kelfimagesrc)),)
 	cp $(kelfimagesrc) $(kelfimagedest)
-	chmod 644 $(kelfimagedest)
+	chmod 600 $(kelfimagedest)
   endif
 endif
 ######################################################################
@@ -197,12 +194,12 @@ ifeq ($(strip $(NEED_DIRECT_GZIP_IMAGE)),YES)
 endif
 # Set permissions on the image
 ifeq ($(strip $(KERNEL_ARCH)),um)
-	chmod 755 $(kimagedest);
   ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
 	strip --strip-unneeded --remove-section=.note --remove-section=.comment	 $(kimagedest);
   endif
+	chmod 700 $(kimagedest);
 else
-	chmod 644 $(kimagedest);
+	chmod 600 $(kimagedest);
 endif
 ######################################################################
 ###   Hooks and information
@@ -222,7 +219,7 @@ endif
 # For LKCD enabled kernels
 	test ! -f Kerntypes ||	cp Kerntypes				       \
 			$(TMPTOP)/$(IMAGEDIR)/Kerntypes-$(KERNELRELEASE)
-	test ! -f Kerntypes ||	chmod 644				       \
+	test ! -f Kerntypes ||	chmod 600				       \
 			$(TMPTOP)/$(IMAGEDIR)/Kerntypes-$(KERNELRELEASE)
 ifeq ($(strip $(delete_build_link)),YES)
 	rm -f $(TMPTOP)/lib/modules/$(KERNELRELEASE)/build
@@ -326,10 +323,13 @@ endif
 ifneq ($(strip $(image_clean_hook)),)
 	(cd $(TMPTOP); test -x $(image_clean_hook) && $(image_clean_hook))
 endif
-	dpkg-gencontrol -DArchitecture=$(DEB_HOST_ARCH) -isp	     \
+	dpkg-gencontrol -DArchitecture=$(GENCONTROL_ARCH) -isp	     \
 			-p$(package) -P$(TMPTOP)/
 	$(create_md5sum)	       $(TMPTOP)
 	chmod -R og=rX		       $(TMPTOP)
+	test ! -e $(kimagedest)        || chmod og-rx $(kimagedest)
+	test ! -e $(TMPTOP)/$(IMAGEDIR)/System.map-$(KERNELRELEASE)  || \
+           chmod og-rx $(TMPTOP)/$(IMAGEDIR)/System.map-$(KERNELRELEASE) $(kimagedest)
 	chown -R root:root	       $(TMPTOP)
 	dpkg --build		       $(TMPTOP) $(DEB_DEST)
 ifeq ($(strip $(do_clean)),YES)

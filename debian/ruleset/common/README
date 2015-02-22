@@ -23,7 +23,7 @@ include debian/common/perlvars.mk
 #  installed files.
 include debian/common/install_cmds.mk
 
-## Per package variable settings. 
+## Per package variable settings.
 #  This file sets the Make variables on a per package basis. Things
 #  like include files, C, C++, and LD flags are set here, as well as
 #  installation paths or, really, anything else that would be needed
@@ -34,17 +34,17 @@ include debian/local-vars.mk
 #  This file takes care of setting C compiler flags, setting the
 #  compiler if a cross compilation effort is detected, and either
 #  arranges for binaries to be stripped or not based on
-#  DEB_BUILD_OPTIONS. 
+#  DEB_BUILD_OPTIONS.
 include debian/common/copt.mk
 
 ## Set automake configuration flags
 #  This file sets confflags variable with the proper --host and
-#  --build options if it detects a cross compilation effort underway. 
+#  --build options if it detects a cross compilation effort underway.
 include debian/common/automake.mk
 
 # Set up the default target.
 all:
-        @echo nothing to be done
+	@echo nothing to be done
 
 ## Include the common targets
 #  This file sets up the flow of control during a Debian package build
@@ -73,6 +73,5 @@ include debian/common/targets.mk
 
 ## The bulk of packaging
 #  This file adds dependencies to the double-colon rules set up in
-#  targets.mk above, and perform the bulk of the packaging. 
+#  targets.mk above, and perform the bulk of the packaging.
 include debian/local.mk
-

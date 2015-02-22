@@ -21,7 +21,7 @@ Linux is copyrighted by Linus Torvalds and others.
    You should have received a copy of the GNU General Public License
    along with this program;  if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-   02111-1307  USA 
+   02111-1307  USA
 
 On Debian GNU/Linux systems, the complete text of the GNU General
 Public License can be found in `/usr/share/common-licenses/GPL'.
@@ -30,7 +30,7 @@ INSTALLATION NOTES:
 
 Before you go any further, please allow me to point out that you need to
 have a few other packages installed before you can compile your own kernels
-(it is difficult to compile anything without a compiler ;-). 
+(it is difficult to compile anything without a compiler ;-).
 
 Firstly, you will need gcc, the libc development package (libc5-dev or
 libc6-dev at the time of writing), and, on Intel platforms, bin86. [If
@@ -57,12 +57,12 @@ recent kernels (2.2 and 2.4 series are fine) (I think you may have to
 edit the makefile for older kernels, or something).  You may control
 which version of gcc used in kernel compilation by setting the
 Makefile variables CC and HOSTCC in the top level kernel Makefile. You
-can do this simply by 
+can do this simply by
   % MAKEFLAGS="CC=gcc-3.2" make-kpkg ...
 (please see the top level kernel Makefile).
 
 Of course, pretty GUI front ends to kernel configuration require more
-packages, but they are not strictly essential (though quite nice really). 
+packages, but they are not strictly essential (though quite nice really).
 
 Oh, and of course, make-kpkg is part of kernel-package, usually found
 in section misc.
@@ -81,21 +81,21 @@ Phase TWO: Create a portable kernel image .deb file
  3% make-kpkg clean
     Or just rm -rf ./debian, if you do not want to get rid of the
     previous state and only rebuild whatever required for any
-    changes. 
- 4% $Get_Root make-kpkg --revision=custom.1.0 kernel_image 
+    changes.
+ 4% make-kpkg --rootcmd $Get_Root --revision=1.0.custom kernel_image
       (Get_Root is whatever you need to become root -- fakeroot or
       sudo are examples that come to mind).  NOTE: if you have
       instructed your boot loader to expect initrd kernels (which is
       the norm for recent kernel image packages) you need to
       add --initrd to the line above.
-   % $Get_Root make-kpkg --initrd --revision=custom.1.0 kernel_image 
+   % make-kpkg --rootcmd $Get_Root --initrd --revision=1.0.custom kernel_image
       Personally, I prefer non initrd images for my personal machines,
       since then adding third party modules to the machine has fewer
       gotchas. Note that you will have to arrange for the actual
       initrd creation to take place by installing a script like
       /usr/share/kernel-package/examples/etc/kernel/post{inst,rm}.d/yaird,
       or, alternately,
-      /usr/share/kerne-package/examples/etc/kernel/post{inst,rm}.d/initramfs 
+      /usr/share/kerne-package/examples/etc/kernel/post{inst,rm}.d/initramfs
       into the corresponding directories /etc/kernel/post{inst,rm}.d,
       since the kernel-postinst does not arrange for the initramfs
       creator to be called. You can thus select your own;
@@ -129,7 +129,7 @@ a) /tmp/linux
 b) /var/tmp/linux
 c) /usr/local/src/<whatever>
 d) /usr/src/linux-X.X.XX; where X.X.XX is the version number of the
-   kernel. 
+   kernel.
 
 In any case, choose a partition that has a large amount of free space,
 since recent kernels, unpacked, run to about 23MB, and you need more
@@ -173,7 +173,7 @@ The kernel now needs to be configured, that is you have to set the
 kernel options and select the drivers which are going to be included,
 either as built-in, or as external modules. These setting are saved in
 a file ./config.  The kernel build infrastructure offers a number of
-targets, which invoke different configuration front-ends. 
+targets, which invoke different configuration front-ends.
 
 Kernel package by itself does not create any configuration file
 (.config); it uses whatever you have. You can use the previous version
@@ -221,7 +221,7 @@ this kernel will have its own set of modules, separate from the
 modules used by the default kernel with the same version.
 
 The revision number (the argument supplied after the --revision flag)
-has certain constraints: 
+has certain constraints:
 a) It only has an effect during the configure phase.
    So, if you want to re-run make-kpkg with a different revision
    number, you have to make sure you start with a clean slate.
@@ -246,29 +246,29 @@ not at all coincidentally coinciding with the kernel version, because it
 is used to reflect the upstream version number. Note that the kernel
 version is also part of the package's name, thus it appears twice in the
 package's file name. It also gets a debian revision number relating to
-differences in builds. It then looks like: 
+differences in builds. It then looks like:
   kernel-image-2.0.29_2.0.29-8.deb
 
 I've found that using a two-level scheme where the major level starts
 with a letter nicely does the job -- unless epochs are used,
-(--revision custom.Y, so the image package become
-kernel-image-X.X.XX-custom.Y.deb), and dselect and dpkg -BOGiE will
+(--revision Y.custom, so the image package become
+kernel-image-X.X.XX-Y.custom.deb), and dselect and dpkg -BOGiE will
 refuse to downgrade to a generic kernel (don't give the BOG arguments
 to dpkg if you actually do want to downgrade later).
 
 The reason for telling kernel-package that the package has a version
-"custom-x.y.whatever.you-want.to+add.more-just.do.not+use.an=underscore" 
+"custom-x.y.whatever.you-want.to+add.more-just.do.not+use.an=underscore"
 is that to dpkg that is always a higher version number than any version
 number starting with a numeral ( e.g. "a" > "2" like "b" > "a". ) This way,
 dselect will not try to upgrade your "roll-it-yourself" kernel-image when
-a new build of the distribution default kernel appears in the archive. 
+a new build of the distribution default kernel appears in the archive.
 
 
 Unfortunately, this fails if the upstream maintainer uses epochs to
 correct a version misnumbering ;-(. The good news is that you can add
 your own epoch to your customized image, ugly though that may
-be. (--revision 1:custom.Y; the kernel image file shall remain
-kernel-image-X.X.XX-custom.Y.deb, but dpkg shall know that it should
+be. (--revision 1:Y.custom; the kernel image file shall remain
+kernel-image-X.X.XX-Y.custom.deb, but dpkg shall know that it should
 not replace that with a standard kernel with an epoch. Hopefully, we
 shall never see an epoch greater than 1 on a standard kernel, but who
 knows. Choose your epoch, if you must use it, wisely. I fear, though,
@@ -276,25 +276,36 @@ that with the introduction of epochs in kernel image versions shame
 has entered the garden of eden, and we must forever use epochs to
 guard against forced upgrades.
 
-So, try using an epoch for your custom packages: 
+So, try using an epoch for your custom packages:
   make-kpkg clean
       (or just rm -rf ./debian, if you do not want to rebuild from the
       beginning)
-  $Get_Root make-kpkg --revision=3:custom.1.0 kernel_image
+  make-kpkg --rootcmd $Get_Root --revision=3:1.0.custom kernel_image
       (Get_Root is whatever you need to become root -- fakeroot or
       sudo are examples that come to mind).
 
 And the next time when you build a kernel, because you just bought a new
 sound card or you discovered that you suddenly want masquerading in your
-kernel enabled, you'll type: 
+kernel enabled, you'll type:
   make-kpkg clean
       (or just rm -rf ./debian)
-  $Get_Root make-kpkg --revision=3:custom.2.0 kernel_image
+  make-kpkg --rootcmd $Get_Root --revision=3:2.0.custom kernel_image
       (Get_Root is whatever you need to become root -- fakeroot or
       sudo are examples that come to mind).
 (remember to do rm -rf ./debian or a make-kpkg clean before you
 compile again with a different revision, or else the revision flag
 shall not have any effect)
+
+Special note for using Get_Root When compiling in a git checkout of
+the kernel sources: the KERNELRELEASE variable contains the key word
+dirty, even though the tree is clean, and verified by git status.  The
+value comes from include/config/kernel.release
+,----
+|  # Using Get_Root for the whole command causes this
+|  $Get_Root  make-kpkg .....
+|  # This does not cause the error
+|  make-kpkg --rootcmd $Get_Root ...
+`----
 
 Note that you will have to arrange for the actual initrd creation to
 take place by installing a script like
@@ -319,7 +330,7 @@ called. You can thus select your own; initramfs-tools or yaird
    make-kpkg clean
         (or just rm -rf ./debian, if you do not want to rebuild from the
          beginning)
-   $Get_Root make-kpkg --initrd --revision=3:custom.2.0 kernel_image
+   make-kpkg --rootcmd $Get_Root --initrd --revision=3:2.0.custom kernel_image
 
 With the new kernel-package conventions, you also need the example
 scripts in /etc/kernel/postinst.d/ and /etc/kernel/postrm.d, to create
@@ -327,7 +338,7 @@ and remove the initramfs. Make sure that these scripts pay attention
 to the INITRD env variable to determine whether or not to take any
 action.
 
- Let me repeat: 
+ Let me repeat:
  Since nothing is created automatically. you need to provide a hook
  script for things to happen when you install the kernel image
  package.  The user provides such scripts. For example, to invoke
@@ -376,22 +387,22 @@ around, you might be interested in:
 --8<---------------cut here---------------end--------------->8---
 
         These scripts will try to make sure that the symlink
- /lib/modules/$VERSION/build 
+ /lib/modules/$VERSION/build
  is sane -- that is points to the header packages whether you install
  the image packages first, or the header packages first -- and takes
  care of cleanup when either of the packages are installed.
 
-When make-kpkg is finished, you'll have 
-kernel-image-2.0.29_custom.1.0_i386.deb and all it takes now is to
+When make-kpkg is finished, you'll have
+kernel-image-2.0.29_1.0.custom_i386.deb and all it takes now is to
 install the package (as root):
-# dpkg -i kernel-image-2.0.29_custom.1.0_i386.deb
+# dpkg -i kernel-image-2.0.29_1.0.custom_i386.deb
 
 This will install the kernel, the modules, the map file and do some other
 administrativia and finally it will ask you if you want to make a
-boot floppy and if you want to run lilo now. 
+boot floppy and if you want to run lilo now.
 
 Now, there is a caveat: If you already have kernel 2.0.29 installed,
-and you have a freshly created custom 2.0.29 kernel, just installing
+and you have a freshly created 2.0.custom.29 kernel, just installing
 the new 2.0.29 kernel shall install modules (as it should) in
 /lib/modules/2.0.29, which is where the old modules were! If you have
 added or removed modules relative to the old 2.0.29 kernel (very
@@ -402,7 +413,7 @@ Unfortunately, there is no reasonable solution; I suggest moving the
 old modules directory before installation, like so (need to be root):
 
         # mv /lib/modules/2.0.29 /lib/modules/2.0.29.save
-        # dpkg -i kernel-image-2.0.29_custom.1.0_i386.deb
+        # dpkg -i kernel-image-2.0.29_1.0.custom_i386.deb
 and later get rid of the .save directory.
 
 People who want to have multiple flavors of the same kernel version
@@ -410,7 +421,7 @@ around should look at the append_to_version flag of make-kpkg. This
 appends to the EXTRAVERSION variable of the kernel Makefile, and does
 not require one to edit that makefile manually.  This can also be done
 by setting the environment variable APPEND_TO_VERSION. The command
-line invocation overrides the env variable. 
+line invocation overrides the env variable.
 
 You may also place long term directives (like your name and email
 address) in the file /etc/kernel-pkg.conf (or ~/.kernel-pkg.conf).
@@ -425,8 +436,8 @@ sure you know what you are doing ;-).
         At the moment, the user modifiable variables supported are:
 
 maintainer	Local kernel-* package maintainer.  Please note that
-                any apostrophes "'" shall have to be quoted like so: 
-                maintainer = John O'\\''Brien. 
+                any apostrophes "'" shall have to be quoted like so:
+                maintainer = John O'\\''Brien.
                 Yes, this is ugly, but this works.
 
 email           The email address of that person.
@@ -451,7 +462,7 @@ image_dest    If  you  want  the  symbolic  link  (or  image,  if
               symbolic  link.   Please  note  that  this is not a
               boolean variable.  This may be of help  to  loadlin
               users,  who  may  set  both  this  and  move_image.
-              Defaults to /. 
+              Defaults to /.
 
 root_cmd         This should be set to a means of gaining superuser
                  access (for example, `sudo' or `fakeroot') as needed
@@ -482,15 +493,15 @@ kpkg_follow_symlinks_in_src
               The environment variable KPKG_FOLLOW_SYMLINKS_IN_SRC
               overrides this. Symlink farming is described below.
 
-The value of a variable can be set so: 
+The value of a variable can be set so:
   a) Defaults exist in the rules file. These are the values used if no
      customization is done.
   b) Variables can be set in the config file /etc/kernel-pkg.conf (or
      ~/.kernel-pkg.conf).  These values override the defaults.
   c) Variables can also be set by setting a corresponding environment
      variable.  These values override the config file and the defaults.
-  d) Using make-kpkg options, or, if using the rules file directly, on 
-     command line ( # xxx/rules DEBIAN_REVISION=2.0a kernel_image). This 
+  d) Using make-kpkg options, or, if using the rules file directly, on
+     command line ( # xxx/rules DEBIAN_REVISION=2.0a kernel_image). This
      overrides all the above methods.
 
 Please see kernel-pkg.conf (5).
@@ -501,7 +512,7 @@ image_dest    If  you  want  the  symbolic  link  (or  image,  if
               symbolic  link.   Please  note  that  this is not a
               Boolean variable.  This may be of help  to  loadlin
               users,  who  may  set  both  this  and  move_image.
-              Defaults to /. 
+              Defaults to /.
 
 move_image    Instead  of  creating  symbolic  links  to  (or, if
               reverse_symlinks  is  set,  from)  image_dest,  the
@@ -544,33 +555,33 @@ Please see kernel-img.conf (5).
 To generate a new kernel image, just run
 % make-kpkg clean
   (or just rm -rf ./debian)
-% $Get_Root make-kpkg --revision=custom.1.0 kernel_image
+% make-kpkg --rootcmd $Get_Root --revision=1.0.custom kernel_image
       (Get_Root is whatever you need to become root -- fakeroot or
       sudo are examples that come to mind) or (if you use initrd)
-   $Get_Root make-kpkg --initrd --revision=3:custom.2.0 kernel_image
+   make-kpkg --rootcmd $Get_Root --initrd --revision=3:2.0.custom kernel_image
 
 This will create a default kernel image (as in the image package or
-available on the boot disks. 
+available on the boot disks.
 
 If you want a custom kernel, you may generate a config file by any of
 these methods (just follow the directions).
 % make config          # boring old tty based method
 or
-% make menuconfig      # curses based menu driven method (uses color if 
+% make menuconfig      # curses based menu driven method (uses color if
                          you have any)
 % make xconfig         # An X window system based method -- make sure
                          you are running X windows when you call this.
 % make gconfig         # The gnome version, if you have version 2.6.X.
-All these methods ultimately generate a .config file.  If you already 
+All these methods ultimately generate a .config file.  If you already
 have a .config file, just copy it to this directory, and you are go.
 
 With a custom .config file in place (created as above) run again:
 % make-kpkg clean
      (or just rm -rf ./debian)
-% $Get_Root make-kpkg --revision=custom.1.0 kernel_image
+% make-kpkg --rootcmd $Get_Root --revision=1.0.custom kernel_image
       (Get_Root is whatever you need to become root -- fakeroot or
       sudo are examples that come to mind).
-   $Get_Root make-kpkg --initrd --revision=3:custom.2.0 kernel_image
+   make-kpkg --rootcmd $Get_Root --initrd --revision=3:2.0.custom kernel_image
 
 |-----------------------------------------------------------------------|
 |                           Special needs                               |
@@ -578,8 +589,8 @@ With a custom .config file in place (created as above) run again:
 | whatever reasons that maybe -- I think that the separate step as      |
 | non-fake-root is not required, but that is a personal opinion)        |
 | % test ! -d debian || rm -rf debian                                   |
-| % make-kpkg  --revision=custom.1.0 build                              |
-| % $Get_Root make-kpkg --revision=custom.1.0 kernel_image              |
+| % make-kpkg  --revision=1.0.custom build                              |
+| % make-kpkg --rootcmd $Get_Root --revision=1.0.custom kernel_image    |
 |     (Get_Root is whatever you need to become root -- fakeroot or      |
 |     sudo are examples that come to mind)                              |
 |                                                                       |
@@ -595,15 +606,16 @@ With a custom .config file in place (created as above) run again:
 | If you use initrd images (and have told your boot loader so) you need |
 | to include the --initrd option on the command line, like so           |
 |                                                                       |
-| % $Get_Root make-kpkg --initrd --revision=3:custom.2.0 kernel_image   |
+| % make-kpkg --rootcmd $Get_Root --initrd --revision=3:2.0.custom \    |
+|                                                        kernel_image   |
 |                                                                       |
 -------------------------------------------------------------------------
 
 To create a source or header package, run
 % make-kpkg clean
   (or rm -rf ./debian)
-% $Get_Root make-kpkg --revision=custom.1.0 kernel_source
-% $Get_Root make-kpkg --revision=custom.1.0 kernel_headers
+% make-kpkg --rootcmd $Get_Root --revision=1.0.custom kernel_source
+% make-kpkg --rootcmd $Get_Root --revision=1.0.custom kernel_headers
 Note: You only need one of these.
       (Get_Root is whatever you need to become root -- fakeroot or
       sudo are examples that come to mind).
@@ -612,10 +624,10 @@ Here is a nice, practical example:
                --revision $(date +'%Y%m%d')
 
 Similarly, the documentation package is built by:
-% $Get_Root make-kpkg --revision=custom.1.0 kernel_doc
+% make-kpkg --rootcmd $Get_Root --revision=1.0.custom kernel_doc
 
-Or if you want to generate the whole package, 
-% $Get_Root make-kpkg --revision=custom.1.0 \
+Or if you want to generate the whole package,
+% make-kpkg --rootcmd $Get_Root --revision=1.0.custom \
             --pgpsign="Your pgp ID" buildpackage
 Note that this needs a pgp key.
       (Get_Root is whatever you need to become root -- fakeroot or
@@ -631,12 +643,12 @@ sample script to add lines to a grub menu file is included in the dir
                         .. /^#End kernel-image '$version/'
 
  or for awk fans
-  #  awk 'BEGIN{printit=1} 
+  #  awk 'BEGIN{printit=1}
       /^#Autogenerated by kernel-image $version/{printit=0}
       /^#End kernel-image '$version/{printit=1}
-      {if (printit) {print}}'. 
+      {if (printit) {print}}'.
  or
-  #  awk '{p=0} 
+  #  awk '{p=0}
           /^#Autogenerated by kernel-image $version$/,
           /^#End kernel-image '$version$/ {p=1}
      {if(!p) print}' < foo
@@ -732,11 +744,11 @@ image contained.
 If you try to install the recompiled kernel image over the previous
 kernel image (same version), then the install scripts
 detect that, and ask you to move at least the /lib/modules/X.X.XX dir
-away. If you continue anyway, the files in /boot shall be overwritten. 
+away. If you continue anyway, the files in /boot shall be overwritten.
 
 Also, if you try to recompile with a changed --revision option or a
 different debian revision, you shall have to remove ./debian, and then
-recompile. 
+recompile.
 
 Cross Compiling for a subarchitecture
 ----- --------- --- - ---------------
@@ -746,14 +758,14 @@ machine, this is the incantation to use:
 
 DEB_HOST_ARCH=i386 make-kpkg --arch i386 --cross-compile - <other options>
 
-Tecras and other notebooks 
+Tecras and other notebooks
 --------------------------
           (Many thanks to Philip Hands <phil@hands.com> and
            Avery Pennarun <apenwarr@worldvisions.ca> for this explanation)
 
 Tecras and other notebooks, and some PCs have a problem where they
 fail to flush the cache when switching on the a20 gate (IIRC), which
-is provoked by bzImage kernels, but not by zImage kernels. 
+is provoked by bzImage kernels, but not by zImage kernels.
 
 bzImage files are actually "big zImage" not "bzipped Image".  bzImage
 kernels can be as large as you like, but because they need to decompress
@@ -802,7 +814,7 @@ Foot note 1:
 
 #############################################################################
 #############################################################################
-## This is a working script contributed by Don Armstrong 
+## This is a working script contributed by Don Armstrong
 
 #!/bin/sh
 # Copyright 2004 Don Armstrong (~don@archimedes.ucr.edu)
@@ -822,15 +834,15 @@ for CONFIG in `cd config; ls *.gz; cd ..`; do
     gzip -c .config > ../config/${MACHINE}_config_${KERNEL}_${DATE}.gz
     cd ..;
 done;
- 
+
 #############################################################################
 #############################################################################
 
 
--- 
+--
 Manoj Srivastava                        <srivasta@debian.org>
-PGP Key ID: 1024/C7261095 
-Key fingerprint =  CB D9 F4 12 68 07 E4 05  CC 2D 27 12 1D F5 E8 6E 
+PGP Key ID: 1024/C7261095
+Key fingerprint =  CB D9 F4 12 68 07 E4 05  CC 2D 27 12 1D F5 E8 6E
 ======================================================================
 
 
@@ -847,15 +859,15 @@ uses the latest kernel version at the time of writing, which was
    search.  Search for "kernel-source". Mark for installation the
    2.4.18 or so.
 
-1b. Use "/" to search for "kernel-package". Mark it for installation 
+1b. Use "/" to search for "kernel-package". Mark it for installation
     also. "Enter" to get back to the main dselect menu.
 
-1c. Choose "Install". This will download a file in /usr/src with a .tgz 
+1c. Choose "Install". This will download a file in /usr/src with a .tgz
     extension, as well as install "kernel-package".
 
 2. "cd /usr/local/src"
 
-3. "bunzip2 /usr/src/kernel-source-2.4.18.tar.bz2" (or whatever the file is 
+3. "bunzip2 /usr/src/kernel-source-2.4.18.tar.bz2" (or whatever the file is
    named). This will unzip (decompress) the file.
 
 4. "tar -xvf kernel-source-2.4.18.tar". This will untar the file (x
@@ -868,12 +880,12 @@ uses the latest kernel version at the time of writing, which was
    moved from I to j).
 
 
-Pause and Breathe. You now have the kernel sources installed. You 
+Pause and Breathe. You now have the kernel sources installed. You
 haven't done anything with them yet, but they're installed.
 
-5. "cd /usr/local/src/kernel-source-2.4.18" 
+5. "cd /usr/local/src/kernel-source-2.4.18"
 
-6. "make menuconfig". This will start a curses-based (text-based) 
+6. "make menuconfig". This will start a curses-based (text-based)
      menu-driven application. There are a lot of choices here, and
      many of them won't make sense to you at all. Take the time to
      look at most all of them (some of them you'll know you don't
@@ -888,15 +900,15 @@ haven't done anything with them yet, but they're installed.
        * Loadable module support; "Yes" to all three sub-items.
        * Parallel port support; "Yes" if you have a parallel
          printer. "No" to keep things simple for now if you can live
-         without the printer for a while. 
+         without the printer for a while.
        * Plug-N-Play; "Yes"; ISA P-N-P; only if you have any ISA cards
-         installed. 
-       * Character devices; turn on Direct Rendering if your video card is 
+         installed.
+       * Character devices; turn on Direct Rendering if your video card is
          listed, and turn on agpgart if your video chipset is listed;
          mice if you  have a PS/2 mouse
        * Sound - find the driver for your card
        * Input core support (some USB stuff needs this, but I'm hazy
-         on it - use your best guess) 
+         on it - use your best guess)
        * USB support (make your best guesses; I'm hazy on it)
        * You probably won't need to touch the following:
               - General Setup
@@ -913,17 +925,17 @@ haven't done anything with them yet, but they're installed.
               - ISDN subsystem
               - Old CD-ROM drivers (unless you have a non-ATAPI CD-ROM
                 drive for now; wait till you've compiled a kernel or
-                two) 
+                two)
               - Multimedia devices (unless you have a tv tuner, etc;
-                too complicated for now; wait) 
+                too complicated for now; wait)
               - File Systems (unless you'll be accessing a
                 DOS/FAT/NTFS/etc partition, or Windows shares via smb,
-                etc) 
+                etc)
               - Console Drivers (play with different text modes at bootup)
               - kernel hacking
 
-     It's by turning off unneeded stuff that the hackers get their kernels 
-     down in size and up in efficiency. But you're not really worried about 
+     It's by turning off unneeded stuff that the hackers get their kernels
+     down in size and up in efficiency. But you're not really worried about
      either at this point.
 
 6b. Exit and save your configuration. This will create a hidden file
@@ -935,7 +947,7 @@ haven't done anything with them yet, but they're installed.
     you've specified.
 
 
-Pause and breathe again. You have now configured your options for the 
+Pause and breathe again. You have now configured your options for the
 next kernel compilation, but you have not yet compiled it.
 
 
@@ -955,14 +967,14 @@ next kernel compilation, but you have not yet compiled it.
    package.  A more complicated command line to build your kernel
    image, with all kinds of bells and whistles, is:
 
-   make-kpkg clean   
-   make-kpkg -rootcmd fakeroot --append-to-version -custom.${VER} \
-        --revision custom.${VER} kernel_image modules-image
+   make-kpkg clean
+   make-kpkg -rootcmd fakeroot --append-to-version -${VER}.custom \
+        --revision ${VER}.custom kernel_image modules-image
    This one also builds any stand-alone modules packages you may have
    installed on your machine.
 
 
-Pause and breathe. You have now compiled your kernel and made a .deb 
+Pause and breathe. You have now compiled your kernel and made a .deb
 file out of it for easy installation.
 
 
@@ -983,8 +995,8 @@ number of kernel as your existing version.
    run lilo.
 
 
-Pause and breathe. You are ready for a reboot to start running your new 
-kernel. Make sure you have a backup method for getting into your box (a 
+Pause and breathe. You are ready for a reboot to start running your new
+kernel. Make sure you have a backup method for getting into your box (a
 Debian install CD, or boot floppy, etc) in case something goes
 wrong. I generally have a lilo.conf file that includes at least one
 other image than /vmlinuz and /vmlinuz.old
@@ -995,9 +1007,9 @@ other image than /vmlinuz and /vmlinuz.old
    running.  Test the machine and see if things work properly.
 
 
-Pause, breathe, celebrate. You've successfully compiled and installed 
-your first kernel! You may not have a working sound card or USB stuff 
-yet, and other things may have broken, but now that you know the basic 
+Pause, breathe, celebrate. You've successfully compiled and installed
+your first kernel! You may not have a working sound card or USB stuff
+yet, and other things may have broken, but now that you know the basic
 procedure you can go back and try again.
 
 10: Celebrate.
