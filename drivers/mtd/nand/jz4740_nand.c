@@ -416,10 +416,8 @@ static int jz_nand_probe(struct platform_device *pdev)
 	uint8_t nand_maf_id = 0, nand_dev_id = 0;
 
 	nand = kzalloc(sizeof(*nand), GFP_KERNEL);
-	if (!nand) {
-		dev_err(&pdev->dev, "Failed to allocate device structure.\n");
+	if (!nand)
 		return -ENOMEM;
-	}
 
 	ret = jz_nand_ioremap_resource(pdev, "mmio", &nand->mem, &nand->base);
 	if (ret)
@@ -579,7 +577,6 @@ static struct platform_driver jz_nand_driver = {
 	.remove = jz_nand_remove,
 	.driver = {
 		.name = "jz4740-nand",
-		.owner = THIS_MODULE,
 	},
 };
 

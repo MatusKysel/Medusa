@@ -3133,6 +3133,7 @@ static int u132_probe(struct platform_device *pdev)
 			u132_u132_put_kref(u132);
 			return retval;
 		} else {
+			device_wakeup_enable(hcd->self.controller);
 			u132_monitor_queue_work(u132, 100);
 			return 0;
 		}
@@ -3143,8 +3144,7 @@ static int u132_probe(struct platform_device *pdev)
 #ifdef CONFIG_PM
 /*
  * for this device there's no useful distinction between the controller
- * and its root hub, except that the root hub only gets direct PM calls
- * when CONFIG_PM_RUNTIME is enabled.
+ * and its root hub.
  */
 static int u132_suspend(struct platform_device *pdev, pm_message_t state)
 {
@@ -3217,8 +3217,7 @@ static struct platform_driver u132_platform_driver = {
 	.suspend = u132_suspend,
 	.resume = u132_resume,
 	.driver = {
-		   .name = (char *)hcd_name,
-		   .owner = THIS_MODULE,
+		   .name = hcd_name,
 		   },
 };
 static int __init u132_hcd_init(void)

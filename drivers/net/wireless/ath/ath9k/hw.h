@@ -29,6 +29,7 @@
 #include "reg.h"
 #include "phy.h"
 #include "btcoex.h"
+#include "dynack.h"
 
 #include "../regd.h"
 
@@ -52,6 +53,7 @@
 #define AR9300_DEVID_QCA955X	0x0038
 #define AR9485_DEVID_AR1111	0x0037
 #define AR9300_DEVID_AR9565     0x0036
+#define AR9300_DEVID_AR953X     0x003d
 
 #define AR5416_AR9100_DEVID	0x000b
 
@@ -168,7 +170,7 @@
 #define CAB_TIMEOUT_VAL             10
 #define BEACON_TIMEOUT_VAL          10
 #define MIN_BEACON_TIMEOUT_VAL      1
-#define SLEEP_SLOP                  3
+#define SLEEP_SLOP                  TU_TO_USEC(3)
 
 #define INIT_CONFIG_STATUS          0x00000000
 #define INIT_RSSI_THR               0x00000700
@@ -215,8 +217,8 @@
 #define AH_WOW_BEACON_MISS		BIT(3)
 
 enum ath_hw_txq_subtype {
-	ATH_TXQ_AC_BE = 0,
-	ATH_TXQ_AC_BK = 1,
+	ATH_TXQ_AC_BK = 0,
+	ATH_TXQ_AC_BE = 1,
 	ATH_TXQ_AC_VI = 2,
 	ATH_TXQ_AC_VO = 3,
 };
@@ -242,13 +244,20 @@ enum ath9k_hw_caps {
 	ATH9K_HW_CAP_2GHZ			= BIT(11),
 	ATH9K_HW_CAP_5GHZ			= BIT(12),
 	ATH9K_HW_CAP_APM			= BIT(13),
+#ifdef CONFIG_ATH9K_PCOEM
 	ATH9K_HW_CAP_RTT			= BIT(14),
 	ATH9K_HW_CAP_MCI			= BIT(15),
-	ATH9K_HW_CAP_DFS			= BIT(16),
-	ATH9K_HW_WOW_DEVICE_CAPABLE		= BIT(17),
-	ATH9K_HW_CAP_PAPRD			= BIT(18),
-	ATH9K_HW_CAP_FCC_BAND_SWITCH		= BIT(19),
-	ATH9K_HW_CAP_BT_ANT_DIV			= BIT(20),
+	ATH9K_HW_WOW_DEVICE_CAPABLE		= BIT(16),
+	ATH9K_HW_CAP_BT_ANT_DIV			= BIT(17),
+#else
+	ATH9K_HW_CAP_RTT			= 0,
+	ATH9K_HW_CAP_MCI			= 0,
+	ATH9K_HW_WOW_DEVICE_CAPABLE		= 0,
+	ATH9K_HW_CAP_BT_ANT_DIV			= 0,
+#endif
+	ATH9K_HW_CAP_DFS			= BIT(18),
+	ATH9K_HW_CAP_PAPRD			= BIT(19),
+	ATH9K_HW_CAP_FCC_BAND_SWITCH		= BIT(20),
 };
 
 /*
@@ -267,6 +276,7 @@ struct ath9k_hw_capabilities {
 	u16 rts_aggr_limit;
 	u8 tx_chainmask;
 	u8 rx_chainmask;
+	u8 chip_chainmask;
 	u8 max_txchains;
 	u8 max_rxchains;
 	u8 num_gpio_pins;
@@ -277,14 +287,25 @@ struct ath9k_hw_capabilities {
 	u8 txs_len;
 };
 
+#define AR_NO_SPUR      	0x8000
+#define AR_BASE_FREQ_2GHZ   	2300
+#define AR_BASE_FREQ_5GHZ   	4900
+#define AR_SPUR_FEEQ_BOUND_HT40 19
+#define AR_SPUR_FEEQ_BOUND_HT20 10
+
+enum ath9k_hw_hang_checks {
+	HW_BB_WATCHDOG            = BIT(0),
+	HW_PHYRESTART_CLC_WAR     = BIT(1),
+	HW_BB_RIFS_HANG           = BIT(2),
+	HW_BB_DFS_HANG            = BIT(3),
+	HW_BB_RX_CLEAR_STUCK_HANG = BIT(4),
+	HW_MAC_HANG               = BIT(5),
+};
+
 struct ath9k_ops_config {
 	int dma_beacon_response_time;
 	int sw_beacon_response_time;
-	int additional_swba_backoff;
-	int ack_6mb;
 	u32 cwm_ignore_extcca;
-	bool pcieSerDesWrite;
-	u8 pcie_clock_req;
 	u32 pcie_waen;
 	u8 analog_shiftreg;
 	u32 ofdm_trig_low;
@@ -295,20 +316,11 @@ struct ath9k_ops_config {
 	int serialize_regmode;
 	bool rx_intr_mitigation;
 	bool tx_intr_mitigation;
-#define SPUR_DISABLE        	0
-#define SPUR_ENABLE_IOCTL   	1
-#define SPUR_ENABLE_EEPROM  	2
-#define AR_SPUR_5413_1      	1640
-#define AR_SPUR_5413_2      	1200
-#define AR_NO_SPUR      	0x8000
-#define AR_BASE_FREQ_2GHZ   	2300
-#define AR_BASE_FREQ_5GHZ   	4900
-#define AR_SPUR_FEEQ_BOUND_HT40 19
-#define AR_SPUR_FEEQ_BOUND_HT20 10
-	int spurmode;
-	u16 spurchans[AR_EEPROM_MODAL_SPURS][2];
 	u8 max_txtrig_level;
 	u16 ani_poll_interval; /* ANI poll interval in ms */
+	u16 hw_hang_checks;
+	u16 rimt_first;
+	u16 rimt_last;
 
 	/* Platform specific config */
 	u32 aspm_l1_fix;
@@ -317,6 +329,8 @@ struct ath9k_ops_config {
 	bool xatten_margin_cfg;
 	bool alt_mingainidx;
 	bool no_pll_pwrsave;
+	bool tx_gain_buffalo;
+	bool led_active_high;
 };
 
 enum ath9k_int {
@@ -460,10 +474,6 @@ struct ath9k_beacon_state {
 	u32 bs_intval;
 #define ATH9K_TSFOOR_THRESHOLD    0x00004240 /* 16k us */
 	u32 bs_dtimperiod;
-	u16 bs_cfpperiod;
-	u16 bs_cfpmaxduration;
-	u32 bs_cfpnext;
-	u16 bs_timoffset;
 	u16 bs_bmissthreshold;
 	u32 bs_sleepduration;
 	u32 bs_tsfoor_threshold;
@@ -499,12 +509,6 @@ struct ath9k_hw_version {
 
 #define AR_GENTMR_BIT(_index)	(1 << (_index))
 
-/*
- * Using de Bruijin sequence to look up 1's index in a 32 bit number
- * debruijn32 = 0000 0111 0111 1100 1011 0101 0011 0001
- */
-#define debruijn32 0x077CB531U
-
 struct ath_gen_timer_configuration {
 	u32 next_addr;
 	u32 period_addr;
@@ -520,12 +524,9 @@ struct ath_gen_timer {
 };
 
 struct ath_gen_timer_table {
-	u32 gen_timer_index[32];
 	struct ath_gen_timer *timers[ATH_MAX_GEN_TIMER];
-	union {
-		unsigned long timer_bits;
-		u16 val;
-	} timer_mask;
+	u16 timer_mask;
+	bool tsf2_enabled;
 };
 
 struct ath_hw_antcomb_conf {
@@ -596,6 +597,10 @@ struct ath_hw_radar_conf {
  *	register settings through the register initialization.
  */
 struct ath_hw_private_ops {
+	void (*init_hang_checks)(struct ath_hw *ah);
+	bool (*detect_mac_hang)(struct ath_hw *ah);
+	bool (*detect_bb_hang)(struct ath_hw *ah);
+
 	/* Calibration ops */
 	void (*init_cal_settings)(struct ath_hw *ah);
 	bool (*init_cal)(struct ath_hw *ah, struct ath9k_channel *chan);
@@ -686,15 +691,15 @@ struct ath_hw_ops {
 				     bool power_off);
 	void (*rx_enable)(struct ath_hw *ah);
 	void (*set_desc_link)(void *ds, u32 link);
-	bool (*calibrate)(struct ath_hw *ah,
-			  struct ath9k_channel *chan,
-			  u8 rxchainmask,
-			  bool longcal);
-	bool (*get_isr)(struct ath_hw *ah, enum ath9k_int *masked);
+	int (*calibrate)(struct ath_hw *ah, struct ath9k_channel *chan,
+			 u8 rxchainmask, bool longcal);
+	bool (*get_isr)(struct ath_hw *ah, enum ath9k_int *masked,
+			u32 *sync_cause_p);
 	void (*set_txdesc)(struct ath_hw *ah, void *ds,
 			   struct ath_tx_info *i);
 	int (*proc_txdesc)(struct ath_hw *ah, void *ds,
 			   struct ath_tx_status *ts);
+	int (*get_duration)(struct ath_hw *ah, const void *ds, int index);
 	void (*antdiv_comb_conf_get)(struct ath_hw *ah,
 			struct ath_hw_antcomb_conf *antconf);
 	void (*antdiv_comb_conf_set)(struct ath_hw *ah,
@@ -729,6 +734,7 @@ enum ath_cal_list {
 #define AH_USE_EEPROM   0x1
 #define AH_UNPLUGGED    0x2 /* The card has been physically removed. */
 #define AH_FASTCC       0x4
+#define AH_NO_EEP_SWAP  0x8 /* Do not swap EEPROM data */
 
 struct ath_hw {
 	struct ath_ops reg_ops;
@@ -750,7 +756,8 @@ struct ath_hw {
 	} eeprom;
 	const struct eeprom_ops *eep_ops;
 
-	bool sw_mgmt_crypto;
+	bool sw_mgmt_crypto_tx;
+	bool sw_mgmt_crypto_rx;
 	bool is_pciexpress;
 	bool aspm_enabled;
 	bool is_monitoring;
@@ -786,7 +793,6 @@ struct ath_hw {
 	u32 txurn_interrupt_mask;
 	atomic_t intr_ref_cnt;
 	bool chip_fullsleep;
-	u32 atim_window;
 	u32 modes_index;
 
 	/* Calibration */
@@ -865,6 +871,7 @@ struct ath_hw {
 	u32 gpio_mask;
 	u32 gpio_val;
 
+	struct ar5416IniArray ini_dfs;
 	struct ar5416IniArray iniModes;
 	struct ar5416IniArray iniCommon;
 	struct ar5416IniArray iniBB_RfGain;
@@ -921,14 +928,22 @@ struct ath_hw {
 	/* Enterprise mode cap */
 	u32 ent_mode;
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_ATH9K_WOW
 	u32 wow_event_mask;
 #endif
 	bool is_clk_25mhz;
 	int (*get_mac_revision)(void);
 	int (*external_reset)(void);
+	bool disable_2ghz;
+	bool disable_5ghz;
 
 	const struct firmware *eeprom_blob;
+
+	struct ath_dynack dynack;
+
+	bool tpc_enabled;
+	u8 tx_power[Ar5416RateSize];
+	u8 tx_power_stbc[Ar5416RateSize];
 };
 
 struct ath_bus_ops {
@@ -1005,6 +1020,7 @@ u32 ath9k_hw_gettsf32(struct ath_hw *ah);
 u64 ath9k_hw_gettsf64(struct ath_hw *ah);
 void ath9k_hw_settsf64(struct ath_hw *ah, u64 tsf64);
 void ath9k_hw_reset_tsf(struct ath_hw *ah);
+u32 ath9k_hw_get_tsf_offset(struct timespec *last, struct timespec *cur);
 void ath9k_hw_set_tsfadjust(struct ath_hw *ah, bool set);
 void ath9k_hw_init_global_settings(struct ath_hw *ah);
 u32 ar9003_get_pll_sqsum_dvc(struct ath_hw *ah);
@@ -1017,13 +1033,6 @@ bool ath9k_hw_check_alive(struct ath_hw *ah);
 
 bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode);
 
-#ifdef CONFIG_ATH9K_DEBUGFS
-void ath9k_debug_sync_cause(struct ath_common *common, u32 sync_cause);
-#else
-static inline void ath9k_debug_sync_cause(struct ath_common *common,
-					  u32 sync_cause) {}
-#endif
-
 /* Generic hw timer primitives */
 struct ath_gen_timer *ath_gen_timer_alloc(struct ath_hw *ah,
 					  void (*trigger)(void *),
@@ -1034,6 +1043,7 @@ void ath9k_hw_gen_timer_start(struct ath_hw *ah,
 			      struct ath_gen_timer *timer,
 			      u32 timer_next,
 			      u32 timer_period);
+void ath9k_hw_gen_timer_start_tsf2(struct ath_hw *ah);
 void ath9k_hw_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer);
 
 void ath_gen_timer_free(struct ath_hw *ah, struct ath_gen_timer *timer);
@@ -1058,6 +1068,7 @@ void ar9002_hw_enable_async_fifo(struct ath_hw *ah);
  * Code specific to AR9003, we stuff these here to avoid callbacks
  * for older families
  */
+bool ar9003_hw_bb_watchdog_check(struct ath_hw *ah);
 void ar9003_hw_bb_watchdog_config(struct ath_hw *ah);
 void ar9003_hw_bb_watchdog_read(struct ath_hw *ah);
 void ar9003_hw_bb_watchdog_dbg_info(struct ath_hw *ah);
@@ -1073,6 +1084,8 @@ int ar9003_paprd_init_table(struct ath_hw *ah);
 bool ar9003_paprd_is_done(struct ath_hw *ah);
 bool ar9003_is_paprd_enabled(struct ath_hw *ah);
 void ar9003_hw_set_chain_masks(struct ath_hw *ah, u8 rx, u8 tx);
+void ar9003_hw_init_rate_txpower(struct ath_hw *ah, u8 *rate_array,
+				 struct ath9k_channel *chan);
 
 /* Hardware family op attach helpers */
 int ar5008_hw_attach_phy_ops(struct ath_hw *ah);
@@ -1089,6 +1102,10 @@ void ar9002_hw_load_ani_reg(struct ath_hw *ah, struct ath9k_channel *chan);
 
 void ath9k_ani_reset(struct ath_hw *ah, bool is_scanning);
 void ath9k_hw_ani_monitor(struct ath_hw *ah, struct ath9k_channel *chan);
+
+void ath9k_hw_set_ack_timeout(struct ath_hw *ah, u32 us);
+void ath9k_hw_set_cts_timeout(struct ath_hw *ah, u32 us);
+void ath9k_hw_setslottime(struct ath_hw *ah, u32 us);
 
 #ifdef CONFIG_ATH9K_BTCOEX_SUPPORT
 static inline bool ath9k_hw_btcoex_is_enabled(struct ath_hw *ah)
@@ -1127,7 +1144,7 @@ ath9k_hw_get_btcoex_scheme(struct ath_hw *ah)
 #endif /* CONFIG_ATH9K_BTCOEX_SUPPORT */
 
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_ATH9K_WOW
 const char *ath9k_hw_wow_event_to_string(u32 wow_event);
 void ath9k_hw_wow_apply_pattern(struct ath_hw *ah, u8 *user_pattern,
 				u8 *user_mask, int pattern_count,

@@ -61,8 +61,7 @@ struct bonded_device {
 };
 
 struct comedi_bond_private {
-# define MAX_BOARD_NAME 256
-	char name[MAX_BOARD_NAME];
+	char name[256];
 	struct bonded_device **devs;
 	unsigned ndevs;
 	unsigned nchans;
@@ -211,7 +210,7 @@ static int do_dev_config(struct comedi_device *dev, struct comedi_devconfig *it)
 			return -EINVAL;
 		}
 
-		snprintf(file, sizeof(file), "/dev/comedi%u", minor);
+		snprintf(file, sizeof(file), "/dev/comedi%d", minor);
 		file[sizeof(file) - 1] = 0;
 
 		d = comedi_open(file);
@@ -254,6 +253,7 @@ static int do_dev_config(struct comedi_device *dev, struct comedi_devconfig *it)
 			if (!devs) {
 				dev_err(dev->class_dev,
 					"Could not allocate memory. Out of memory?\n");
+				kfree(bdev);
 				return -ENOMEM;
 			}
 			devpriv->devs = devs;
@@ -261,12 +261,10 @@ static int do_dev_config(struct comedi_device *dev, struct comedi_devconfig *it)
 			{
 				/* Append dev:subdev to devpriv->name */
 				char buf[20];
-				int left =
-				    MAX_BOARD_NAME - strlen(devpriv->name) - 1;
-				snprintf(buf, sizeof(buf), "%d:%d ",
+				snprintf(buf, sizeof(buf), "%u:%u ",
 					 bdev->minor, bdev->subdev);
-				buf[sizeof(buf) - 1] = 0;
-				strncat(devpriv->name, buf, left);
+				strlcat(devpriv->name, buf,
+					sizeof(devpriv->name));
 			}
 
 		}

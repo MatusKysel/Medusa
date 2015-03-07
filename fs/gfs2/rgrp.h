@@ -20,6 +20,7 @@
  */
 #define RGRP_RSRV_MINBYTES 8
 #define RGRP_RSRV_MINBLKS ((u32)(RGRP_RSRV_MINBYTES * GFS2_NBBY))
+#define RGRP_RSRV_ADDBLKS 64
 
 struct gfs2_rgrpd;
 struct gfs2_sbd;
@@ -68,7 +69,7 @@ extern void gfs2_rlist_add(struct gfs2_inode *ip, struct gfs2_rgrp_list *rlist,
 extern void gfs2_rlist_alloc(struct gfs2_rgrp_list *rlist, unsigned int state);
 extern void gfs2_rlist_free(struct gfs2_rgrp_list *rlist);
 extern u64 gfs2_ri_total(struct gfs2_sbd *sdp);
-extern int gfs2_rgrp_dump(struct seq_file *seq, const struct gfs2_glock *gl);
+extern void gfs2_rgrp_dump(struct seq_file *seq, const struct gfs2_glock *gl);
 extern int gfs2_rgrp_send_discards(struct gfs2_sbd *sdp, u64 offset,
 				   struct buffer_head *bh,
 				   const struct gfs2_bitmap *bi, unsigned minlen, u64 *ptrimmed);
@@ -80,4 +81,5 @@ static inline bool gfs2_rs_active(struct gfs2_blkreserv *rs)
 	return rs && !RB_EMPTY_NODE(&rs->rs_node);
 }
 
+extern void check_and_update_goal(struct gfs2_inode *ip);
 #endif /* __RGRP_DOT_H__ */

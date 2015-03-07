@@ -106,8 +106,11 @@ static int load_cpu_fw_direct(const char *fn, u8 __iomem *mem, struct cx18 *cx)
 	u32 __iomem *dst = (u32 __iomem *)mem;
 	const u32 *src;
 
-	if (request_firmware(&fw, fn, &cx->pci_dev->dev))
+	if (request_firmware(&fw, fn, &cx->pci_dev->dev)) {
+		CX18_ERR("Unable to open firmware %s\n", fn);
+		CX18_ERR("Did you put the firmware in the hotplug firmware directory?\n");
 		return -ENOMEM;
+	}
 
 	src = (const u32 *)fw->data;
 
@@ -127,7 +130,7 @@ static int load_cpu_fw_direct(const char *fn, u8 __iomem *mem, struct cx18 *cx)
 		}
 	}
 	if (!test_bit(CX18_F_I_LOADED_FW, &cx->i_flags))
-		CX18_INFO("loaded %s firmware (%zd bytes)\n", fn, fw->size);
+		CX18_INFO("loaded %s firmware (%zu bytes)\n", fn, fw->size);
 	size = fw->size;
 	release_firmware(fw);
 	cx18_setup_page(cx, SCB_OFFSET);
@@ -148,6 +151,8 @@ static int load_apu_fw_direct(const char *fn, u8 __iomem *dst, struct cx18 *cx,
 	int sz;
 
 	if (request_firmware(&fw, fn, &cx->pci_dev->dev)) {
+		CX18_ERR("unable to open firmware %s\n", fn);
+		CX18_ERR("did you put the firmware in the hotplug firmware directory?\n");
 		cx18_setup_page(cx, 0);
 		return -ENOMEM;
 	}
@@ -159,7 +164,7 @@ static int load_apu_fw_direct(const char *fn, u8 __iomem *dst, struct cx18 *cx,
 
 	apu_version = (vers[0] << 24) | (vers[4] << 16) | vers[32];
 	while (offset + sizeof(seghdr) < fw->size) {
-		const u32 *shptr = src + offset / 4;
+		const __le32 *shptr = (__force __le32 *)src + offset / 4;
 
 		seghdr.sync1 = le32_to_cpu(shptr[0]);
 		seghdr.sync2 = le32_to_cpu(shptr[1]);
@@ -197,7 +202,7 @@ static int load_apu_fw_direct(const char *fn, u8 __iomem *dst, struct cx18 *cx,
 		offset += seghdr.size;
 	}
 	if (!test_bit(CX18_F_I_LOADED_FW, &cx->i_flags))
-		CX18_INFO("loaded %s firmware V%08x (%zd bytes)\n",
+		CX18_INFO("loaded %s firmware V%08x (%zu bytes)\n",
 				fn, apu_version, fw->size);
 	size = fw->size;
 	release_firmware(fw);

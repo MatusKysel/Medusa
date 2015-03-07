@@ -2,7 +2,7 @@
  *    Support for NXT2002 and NXT2004 - VSB/QAM
  *
  *    Copyright (C) 2005 Kirk Lapray <kirk.lapray@gmail.com>
- *    Copyright (C) 2006 Michael Krufky <mkrufky@m1k.net>
+ *    Copyright (C) 2006-2014 Michael Krufky <mkrufky@linuxtv.org>
  *    based on nxt2002 by Taylor Jacob <rtjacob@earthlink.net>
  *    and nxt2004 by Jean-Francois Thibert <jeanfrancois@sagetv.com>
  *
@@ -891,8 +891,12 @@ static int nxt2002_init(struct dvb_frontend* fe)
 		 __func__, NXT2002_DEFAULT_FIRMWARE);
 	ret = request_firmware(&fw, NXT2002_DEFAULT_FIRMWARE,
 			       state->i2c->dev.parent);
-	if (ret)
+	pr_debug("%s: Waiting for firmware upload(2)...\n", __func__);
+	if (ret) {
+		pr_err("%s: No firmware uploaded (timeout or file not found?)"
+		       "\n", __func__);
 		return ret;
+	}
 
 	ret = nxt2002_load_firmware(fe, fw);
 	release_firmware(fw);
@@ -954,8 +958,12 @@ static int nxt2004_init(struct dvb_frontend* fe)
 		 __func__, NXT2004_DEFAULT_FIRMWARE);
 	ret = request_firmware(&fw, NXT2004_DEFAULT_FIRMWARE,
 			       state->i2c->dev.parent);
-	if (ret)
+	pr_debug("%s: Waiting for firmware upload(2)...\n", __func__);
+	if (ret) {
+		pr_err("%s: No firmware uploaded (timeout or file not found?)"
+		       "\n", __func__);
 		return ret;
+	}
 
 	ret = nxt2004_load_firmware(fe, fw);
 	release_firmware(fw);

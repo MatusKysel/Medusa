@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011 Instituto Nokia de Tecnologia
+ * Copyright (C) 2014 Marvell International Ltd.
  *
  * Authors:
  *    Lauro Ramos Venancio <lauro.venancio@openbossa.org>
@@ -16,9 +17,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the
- * Free Software Foundation, Inc.,
- * 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef __NET_NFC_H
@@ -89,6 +88,7 @@ struct nfc_ops {
 #define NFC_TARGET_IDX_ANY -1
 #define NFC_MAX_GT_LEN 48
 #define NFC_ATR_RES_GT_OFFSET 15
+#define NFC_ATR_REQ_GT_OFFSET 14
 
 /**
  * struct nfc_target - NFC target descriptiom
@@ -113,6 +113,9 @@ struct nfc_target {
 	u8 sensf_res[NFC_SENSF_RES_MAXSIZE];
 	u8 hci_reader_gate;
 	u8 logical_idx;
+	u8 is_iso15693;
+	u8 iso15693_dsfid;
+	u8 iso15693_uid[NFC_ISO15693_UID_MAXSIZE];
 };
 
 /**
@@ -262,5 +265,8 @@ void nfc_driver_failure(struct nfc_dev *dev, int err);
 int nfc_add_se(struct nfc_dev *dev, u32 se_idx, u16 type);
 int nfc_remove_se(struct nfc_dev *dev, u32 se_idx);
 struct nfc_se *nfc_find_se(struct nfc_dev *dev, u32 se_idx);
+
+void nfc_send_to_raw_sock(struct nfc_dev *dev, struct sk_buff *skb,
+			  u8 payload_type, u8 direction);
 
 #endif /* __NET_NFC_H */

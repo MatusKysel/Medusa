@@ -50,11 +50,12 @@ struct vfsmount * medusa_evocate_mnt(struct dentry *dentry)
 
 	/* get the local root */
 	//spin_lock(&dcache_lock);
+	spin_lock(&dentry->d_lock);
 	rcu_read_lock();
 	while (!IS_ROOT(dentry))
 		dentry = dentry->d_parent;
 	dget(dentry);
-	rcu_read_unlock();
+	spin_unlock(&dentry->d_lock);
 	//spin_unlock(&dcache_lock);
 
 	maxdepth = 0;
@@ -113,60 +114,60 @@ struct vfsmount * medusa_evocate_mnt(struct dentry *dentry)
 	return mntget(init_task.fs->root.mnt);
 }
 
-static medusa_answer_t do_file_kobj_validate_dentry(struct nameidata * ndcurrent,
-		struct nameidata * ndupper, struct nameidata * ndparent);
+static medusa_answer_t do_file_kobj_validate_dentry(struct path * ndcurrent,
+		struct path * ndupper, struct path * ndparent);
 
 void medusa_clean_inode(struct inode * inode)
 {
 	INIT_MEDUSA_OBJECT_VARS(&inode_security(inode));
 }
-void medusa_get_upper_and_parent(struct nameidata * ndsource,
-		struct nameidata * ndupperp, struct nameidata * ndparentp)
+void medusa_get_upper_and_parent(struct path * ndsource,
+		struct path * ndupperp, struct path * ndparentp)
 {
 	*ndupperp = *ndsource;
-	dget(ndupperp->path.dentry);
-	if (ndupperp->path.mnt)
-		mntget(ndupperp->path.mnt);
-	else if (IS_ROOT(ndupperp->path.dentry))
-		ndupperp->path.mnt = medusa_evocate_mnt(ndupperp->path.dentry); /* FIXME: may fail [?] */
+	dget(ndupperp->dentry);
+	if (ndupperp->mnt)
+		mntget(ndupperp->mnt);
+	else if (IS_ROOT(ndupperp->dentry))
+		ndupperp->mnt = medusa_evocate_mnt(ndupperp->dentry); /* FIXME: may fail [?] */
 
-	while (IS_ROOT(ndupperp->path.dentry)) {
+	while (IS_ROOT(ndupperp->dentry)) {
 		struct vfsmount * tmp;
-		if (real_mount(ndupperp->path.mnt)->mnt_parent == real_mount(ndupperp->path.mnt)->mnt_parent->mnt_parent)
+		if (real_mount(ndupperp->mnt)->mnt_parent == real_mount(ndupperp->mnt)->mnt_parent->mnt_parent)
 			break;
-		dput(ndupperp->path.dentry);
-		ndupperp->path.dentry = dget(real_mount(ndupperp->path.mnt)->mnt_mountpoint);
-		tmp = mntget(&real_mount(ndupperp->path.mnt)->mnt_parent->mnt);
-		mntput(ndupperp->path.mnt);
-		ndupperp->path.mnt = tmp;
+		dput(ndupperp->dentry);
+		ndupperp->dentry = dget(real_mount(ndupperp->mnt)->mnt_mountpoint);
+		tmp = mntget(&real_mount(ndupperp->mnt)->mnt_parent->mnt);
+		mntput(ndupperp->mnt);
+		ndupperp->mnt = tmp;
 	}
 	if (ndparentp) {
-		if (IS_ROOT(ndupperp->path.dentry))
+		if (IS_ROOT(ndupperp->dentry))
 			*ndparentp = *ndsource;
 		else {
-			ndparentp->path.dentry = ndupperp->path.dentry->d_parent;
-			ndparentp->path.mnt = ndupperp->path.mnt;
+			ndparentp->dentry = ndupperp->dentry->d_parent;
+			ndparentp->mnt = ndupperp->mnt;
 		}
-		dget(ndparentp->path.dentry);
-		if (ndparentp->path.mnt)
-			mntget(ndparentp->path.mnt);
+		dget(ndparentp->dentry);
+		if (ndparentp->mnt)
+			mntget(ndparentp->mnt);
 	}
 
 	/* Now we have dentry and mnt. If IS_ROOT(dentry) then the dentry is global filesystem root */
 	return;
 }
 
-void medusa_put_upper_and_parent(struct nameidata * ndupper, struct nameidata * ndparent)
+void medusa_put_upper_and_parent(struct path * ndupper, struct path * ndparent)
 {
 	if (ndupper) {
-		dput(ndupper->path.dentry);
-		if (ndupper->path.mnt)
-			mntput(ndupper->path.mnt);
+		dput(ndupper->dentry);
+		if (ndupper->mnt)
+			mntput(ndupper->mnt);
 	}
 	if (ndparent) {
-		dput(ndparent->path.dentry);
-		if (ndparent->path.mnt)
-			mntput(ndparent->path.mnt);
+		dput(ndparent->dentry);
+		if (ndparent->mnt)
+			mntput(ndparent->mnt);
 	}
 }
 
@@ -180,9 +181,9 @@ int medusa_l1_inode_alloc_security(struct inode *inode);
  */
 int file_kobj_validate_dentry(struct dentry * dentry, struct vfsmount * mnt)
 {
-	struct nameidata ndcurrent;
-	struct nameidata ndupper;
-	struct nameidata ndparent;
+	struct path ndcurrent;
+	struct path ndupper;
+	struct path ndparent;
 
 	INIT_MEDUSA_OBJECT_VARS(&inode_security(dentry->d_inode));
 #ifdef CONFIG_MEDUSA_FILE_CAPABILITIES
@@ -190,38 +191,38 @@ int file_kobj_validate_dentry(struct dentry * dentry, struct vfsmount * mnt)
 	inode_security(dentry->d_inode).icap = CAP_FULL_SET;
 	inode_security(dentry->d_inode).ecap = CAP_FULL_SET;
 #endif
-	ndcurrent.path.dentry = dentry;
-	ndcurrent.path.mnt = mnt; /* may be NULL */
+	ndcurrent.dentry = dentry;
+	ndcurrent.mnt = mnt; /* may be NULL */
 	medusa_get_upper_and_parent(&ndcurrent, &ndupper, &ndparent);
 
-	if (ndparent.path.dentry->d_inode == NULL) {
+	if (ndparent.dentry->d_inode == NULL) {
 		medusa_put_upper_and_parent(&ndupper, &ndparent);
 		return 0;
 	}
 
-	if (ndcurrent.path.dentry != ndparent.path.dentry) {
-		if (&inode_security(ndcurrent.path.dentry->d_inode) == NULL) // dont know why? TODO find out
-			medusa_l1_inode_alloc_security(ndcurrent.path.dentry->d_inode);
+	if (ndcurrent.dentry != ndparent.dentry) {
+		if (&inode_security(ndcurrent.dentry->d_inode) == NULL) // dont know why? TODO find out
+			medusa_l1_inode_alloc_security(ndcurrent.dentry->d_inode);
 
-		if (&inode_security(ndparent.path.dentry->d_inode) == NULL) // dont know why? TODO find out
-			medusa_l1_inode_alloc_security(ndparent.path.dentry->d_inode);
+		if (&inode_security(ndparent.dentry->d_inode) == NULL) // dont know why? TODO find out
+			medusa_l1_inode_alloc_security(ndparent.dentry->d_inode);
 
-		if (!MED_MAGIC_VALID(&inode_security(ndparent.path.dentry->d_inode)) &&
-			file_kobj_validate_dentry(ndparent.path.dentry, ndparent.path.mnt) <= 0) {
+		if (!MED_MAGIC_VALID(&inode_security(ndparent.dentry->d_inode)) &&
+			file_kobj_validate_dentry(ndparent.dentry, ndparent.mnt) <= 0) {
 			medusa_put_upper_and_parent(&ndupper, &ndparent);
 			return 0;
 		}
 
 		if (!MEDUSA_MONITORED_ACCESS_O(getfile_event,
-					&inode_security(ndparent.path.dentry->d_inode))) {
+					&inode_security(ndparent.dentry->d_inode))) {
 
-			COPY_MEDUSA_OBJECT_VARS(&inode_security(ndcurrent.path.dentry->d_inode),
-					&inode_security(ndparent.path.dentry->d_inode));
-			inode_security(ndcurrent.path.dentry->d_inode).user = inode_security(ndparent.path.dentry->d_inode).user;
+			COPY_MEDUSA_OBJECT_VARS(&inode_security(ndcurrent.dentry->d_inode),
+					&inode_security(ndparent.dentry->d_inode));
+			inode_security(ndcurrent.dentry->d_inode).user = inode_security(ndparent.dentry->d_inode).user;
 #ifdef CONFIG_MEDUSA_FILE_CAPABILITIES                                                
-			inode_security(ndcurrent.path.dentry->d_inode).icap = inode_security(ndparent.path.dentry->d_inode).icap;
-			inode_security(ndcurrent.path.dentry->d_inode).pcap = inode_security(ndparent.path.dentry->d_inode).pcap;
-			inode_security(ndcurrent.path.dentry->d_inode).ecap = inode_security(ndparent.path.dentry->d_inode).ecap;
+			inode_security(ndcurrent.dentry->d_inode).icap = inode_security(ndparent.dentry->d_inode).icap;
+			inode_security(ndcurrent.dentry->d_inode).pcap = inode_security(ndparent.dentry->d_inode).pcap;
+			inode_security(ndcurrent.dentry->d_inode).ecap = inode_security(ndparent.dentry->d_inode).ecap;
 #endif
 			medusa_put_upper_and_parent(&ndupper, &ndparent);
 			return 1;
@@ -233,28 +234,28 @@ int file_kobj_validate_dentry(struct dentry * dentry, struct vfsmount * mnt)
 	if (do_file_kobj_validate_dentry(&ndcurrent, &ndupper, &ndparent)
 			!= MED_ERR) {
 		medusa_put_upper_and_parent(&ndupper, &ndparent);
-		return MED_MAGIC_VALID(&inode_security(ndcurrent.path.dentry->d_inode));
+		return MED_MAGIC_VALID(&inode_security(ndcurrent.dentry->d_inode));
 	}
 	medusa_put_upper_and_parent(&ndupper, &ndparent);
 	return -1;
 }
 
-static medusa_answer_t do_file_kobj_validate_dentry(struct nameidata * ndcurrent,
-		struct nameidata * ndupper, struct nameidata * ndparent)
+static medusa_answer_t do_file_kobj_validate_dentry(struct path* ndcurrent,
+		struct path* ndupper, struct path* ndparent)
 {
 	struct getfile_event event;
 	struct file_kobject file;
 	struct file_kobject directory;
 	medusa_answer_t retval;
 
-	file_kern2kobj(&file, ndcurrent->path.dentry->d_inode);
-	file_kobj_dentry2string(ndupper->path.dentry, event.filename);
-	file_kern2kobj(&directory, ndparent->path.dentry->d_inode);
-	file_kobj_live_add(ndcurrent->path.dentry->d_inode);
-	file_kobj_live_add(ndparent->path.dentry->d_inode);
+	file_kern2kobj(&file, ndcurrent->dentry->d_inode);
+	file_kobj_dentry2string(ndupper->dentry, event.filename);
+	file_kern2kobj(&directory, ndparent->dentry->d_inode);
+	file_kobj_live_add(ndcurrent->dentry->d_inode);
+	file_kobj_live_add(ndparent->dentry->d_inode);
 	retval = MED_DECIDE(getfile_event, &event, &file, &directory);
-	file_kobj_live_remove(ndparent->path.dentry->d_inode);
-	file_kobj_live_remove(ndcurrent->path.dentry->d_inode);
+	file_kobj_live_remove(ndparent->dentry->d_inode);
+	file_kobj_live_remove(ndcurrent->dentry->d_inode);
 	return retval;
 }
 

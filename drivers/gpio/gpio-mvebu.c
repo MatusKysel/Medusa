@@ -44,6 +44,7 @@
 #include <linux/of_device.h>
 #include <linux/clk.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/irqchip/chained_irq.h>
 
 /*
  * GPIO unit register offsets.
@@ -82,6 +83,14 @@ struct mvebu_gpio_chip {
 	int		   irqbase;
 	struct irq_domain *domain;
 	int                soc_variant;
+
+	/* Used to preserve GPIO registers accross suspend/resume */
+	u32                out_reg;
+	u32                io_conf_reg;
+	u32                blink_en_reg;
+	u32                in_pol_reg;
+	u32                edge_mask_regs[4];
+	u32                level_mask_regs[4];
 };
 
 /*
@@ -438,11 +447,14 @@ static int mvebu_gpio_irq_set_type(struct irq_data *d, unsigned int type)
 static void mvebu_gpio_irq_handler(unsigned int irq, struct irq_desc *desc)
 {
 	struct mvebu_gpio_chip *mvchip = irq_get_handler_data(irq);
+	struct irq_chip *chip = irq_desc_get_chip(desc);
 	u32 cause, type;
 	int i;
 
 	if (mvchip == NULL)
 		return;
+
+	chained_irq_enter(chip, desc);
 
 	cause = readl_relaxed(mvebu_gpioreg_data_in(mvchip)) &
 		readl_relaxed(mvebu_gpioreg_level_mask(mvchip));
@@ -466,8 +478,11 @@ static void mvebu_gpio_irq_handler(unsigned int irq, struct irq_desc *desc)
 			polarity ^= 1 << i;
 			writel_relaxed(polarity, mvebu_gpioreg_in_pol(mvchip));
 		}
+
 		generic_handle_irq(irq);
 	}
+
+	chained_irq_exit(chip, desc);
 }
 
 #ifdef CONFIG_DEBUG_FS
@@ -528,7 +543,7 @@ static void mvebu_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 #define mvebu_gpio_dbg_show NULL
 #endif
 
-static struct of_device_id mvebu_gpio_of_match[] = {
+static const struct of_device_id mvebu_gpio_of_match[] = {
 	{
 		.compatible = "marvell,orion-gpio",
 		.data       = (void *) MVEBU_GPIO_SOC_VARIANT_ORION,
@@ -546,6 +561,93 @@ static struct of_device_id mvebu_gpio_of_match[] = {
 	},
 };
 MODULE_DEVICE_TABLE(of, mvebu_gpio_of_match);
+
+static int mvebu_gpio_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	struct mvebu_gpio_chip *mvchip = platform_get_drvdata(pdev);
+	int i;
+
+	mvchip->out_reg = readl(mvebu_gpioreg_out(mvchip));
+	mvchip->io_conf_reg = readl(mvebu_gpioreg_io_conf(mvchip));
+	mvchip->blink_en_reg = readl(mvebu_gpioreg_blink(mvchip));
+	mvchip->in_pol_reg = readl(mvebu_gpioreg_in_pol(mvchip));
+
+	switch (mvchip->soc_variant) {
+	case MVEBU_GPIO_SOC_VARIANT_ORION:
+		mvchip->edge_mask_regs[0] =
+			readl(mvchip->membase + GPIO_EDGE_MASK_OFF);
+		mvchip->level_mask_regs[0] =
+			readl(mvchip->membase + GPIO_LEVEL_MASK_OFF);
+		break;
+	case MVEBU_GPIO_SOC_VARIANT_MV78200:
+		for (i = 0; i < 2; i++) {
+			mvchip->edge_mask_regs[i] =
+				readl(mvchip->membase +
+				      GPIO_EDGE_MASK_MV78200_OFF(i));
+			mvchip->level_mask_regs[i] =
+				readl(mvchip->membase +
+				      GPIO_LEVEL_MASK_MV78200_OFF(i));
+		}
+		break;
+	case MVEBU_GPIO_SOC_VARIANT_ARMADAXP:
+		for (i = 0; i < 4; i++) {
+			mvchip->edge_mask_regs[i] =
+				readl(mvchip->membase +
+				      GPIO_EDGE_MASK_ARMADAXP_OFF(i));
+			mvchip->level_mask_regs[i] =
+				readl(mvchip->membase +
+				      GPIO_LEVEL_MASK_ARMADAXP_OFF(i));
+		}
+		break;
+	default:
+		BUG();
+	}
+
+	return 0;
+}
+
+static int mvebu_gpio_resume(struct platform_device *pdev)
+{
+	struct mvebu_gpio_chip *mvchip = platform_get_drvdata(pdev);
+	int i;
+
+	writel(mvchip->out_reg, mvebu_gpioreg_out(mvchip));
+	writel(mvchip->io_conf_reg, mvebu_gpioreg_io_conf(mvchip));
+	writel(mvchip->blink_en_reg, mvebu_gpioreg_blink(mvchip));
+	writel(mvchip->in_pol_reg, mvebu_gpioreg_in_pol(mvchip));
+
+	switch (mvchip->soc_variant) {
+	case MVEBU_GPIO_SOC_VARIANT_ORION:
+		writel(mvchip->edge_mask_regs[0],
+		       mvchip->membase + GPIO_EDGE_MASK_OFF);
+		writel(mvchip->level_mask_regs[0],
+		       mvchip->membase + GPIO_LEVEL_MASK_OFF);
+		break;
+	case MVEBU_GPIO_SOC_VARIANT_MV78200:
+		for (i = 0; i < 2; i++) {
+			writel(mvchip->edge_mask_regs[i],
+			       mvchip->membase + GPIO_EDGE_MASK_MV78200_OFF(i));
+			writel(mvchip->level_mask_regs[i],
+			       mvchip->membase +
+			       GPIO_LEVEL_MASK_MV78200_OFF(i));
+		}
+		break;
+	case MVEBU_GPIO_SOC_VARIANT_ARMADAXP:
+		for (i = 0; i < 4; i++) {
+			writel(mvchip->edge_mask_regs[i],
+			       mvchip->membase +
+			       GPIO_EDGE_MASK_ARMADAXP_OFF(i));
+			writel(mvchip->level_mask_regs[i],
+			       mvchip->membase +
+			       GPIO_LEVEL_MASK_ARMADAXP_OFF(i));
+		}
+		break;
+	default:
+		BUG();
+	}
+
+	return 0;
+}
 
 static int mvebu_gpio_probe(struct platform_device *pdev)
 {
@@ -567,10 +669,10 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 		soc_variant = MVEBU_GPIO_SOC_VARIANT_ORION;
 
 	mvchip = devm_kzalloc(&pdev->dev, sizeof(struct mvebu_gpio_chip), GFP_KERNEL);
-	if (!mvchip) {
-		dev_err(&pdev->dev, "Cannot allocate memory\n");
+	if (!mvchip)
 		return -ENOMEM;
-	}
+
+	platform_set_drvdata(pdev, mvchip);
 
 	if (of_property_read_u32(pdev->dev.of_node, "ngpios", &ngpios)) {
 		dev_err(&pdev->dev, "Missing ngpios OF property\n");
@@ -600,7 +702,7 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 	mvchip->chip.to_irq = mvebu_gpio_to_irq;
 	mvchip->chip.base = id * MVEBU_MAX_GPIO_PER_BANK;
 	mvchip->chip.ngpio = ngpios;
-	mvchip->chip.can_sleep = 0;
+	mvchip->chip.can_sleep = false;
 	mvchip->chip.of_node = np;
 	mvchip->chip.dbg_show = mvebu_gpio_dbg_show;
 
@@ -676,7 +778,7 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 	mvchip->irqbase = irq_alloc_descs(-1, 0, ngpios, -1);
 	if (mvchip->irqbase < 0) {
 		dev_err(&pdev->dev, "no irqs\n");
-		return -ENOMEM;
+		return mvchip->irqbase;
 	}
 
 	gc = irq_alloc_generic_chip("mvebu_gpio_irq", 2, mvchip->irqbase,
@@ -726,14 +828,10 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 static struct platform_driver mvebu_gpio_driver = {
 	.driver		= {
 		.name	        = "mvebu-gpio",
-		.owner	        = THIS_MODULE,
 		.of_match_table = mvebu_gpio_of_match,
 	},
 	.probe		= mvebu_gpio_probe,
+	.suspend        = mvebu_gpio_suspend,
+	.resume         = mvebu_gpio_resume,
 };
-
-static int __init mvebu_gpio_init(void)
-{
-	return platform_driver_register(&mvebu_gpio_driver);
-}
-postcore_initcall(mvebu_gpio_init);
+module_platform_driver(mvebu_gpio_driver);

@@ -261,19 +261,8 @@ int fsl_usb2_mpc5121_init(struct platform_device *pdev)
 	struct fsl_usb2_platform_data *pdata = dev_get_platdata(&pdev->dev);
 	struct clk *clk;
 	int err;
-	char clk_name[10];
-	int base, clk_num;
 
-	base = pdev->resource->start & 0xf000;
-	if (base == 0x3000)
-		clk_num = 1;
-	else if (base == 0x4000)
-		clk_num = 2;
-	else
-		return -ENODEV;
-
-	snprintf(clk_name, sizeof(clk_name), "usb%d_clk", clk_num);
-	clk = devm_clk_get(pdev->dev.parent, clk_name);
+	clk = devm_clk_get(pdev->dev.parent, "ipg");
 	if (IS_ERR(clk)) {
 		dev_err(&pdev->dev, "failed to get clk\n");
 		return PTR_ERR(clk);
@@ -337,7 +326,6 @@ static const struct of_device_id fsl_usb2_mph_dr_of_match[] = {
 static struct platform_driver fsl_usb2_mph_dr_driver = {
 	.driver = {
 		.name = "fsl-usb2-mph-dr",
-		.owner = THIS_MODULE,
 		.of_match_table = fsl_usb2_mph_dr_of_match,
 	},
 	.probe	= fsl_usb2_mph_dr_of_probe,

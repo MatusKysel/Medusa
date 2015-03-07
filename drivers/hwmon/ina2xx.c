@@ -148,7 +148,8 @@ static int ina2xx_get_value(struct ina2xx_data *data, u8 reg)
 
 	switch (reg) {
 	case INA2XX_SHUNT_VOLTAGE:
-		val = DIV_ROUND_CLOSEST(data->regs[reg],
+		/* signed register */
+		val = DIV_ROUND_CLOSEST((s16)data->regs[reg],
 					data->config->shunt_div);
 		break;
 	case INA2XX_BUS_VOLTAGE:
@@ -160,8 +161,8 @@ static int ina2xx_get_value(struct ina2xx_data *data, u8 reg)
 		val = data->regs[reg] * data->config->power_lsb;
 		break;
 	case INA2XX_CURRENT:
-		/* LSB=1mA (selected). Is in mA */
-		val = data->regs[reg];
+		/* signed register, LSB=1mA (selected), in mA */
+		val = (s16)data->regs[reg];
 		break;
 	default:
 		/* programmer goofed */
@@ -222,6 +223,7 @@ static int ina2xx_probe(struct i2c_client *client,
 	struct device *hwmon_dev;
 	long shunt = 10000; /* default shunt value 10mOhms */
 	u32 val;
+	int ret;
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WORD_DATA))
 		return -ENODEV;
@@ -246,12 +248,25 @@ static int ina2xx_probe(struct i2c_client *client,
 	data->config = &ina2xx_config[data->kind];
 
 	/* device configuration */
-	i2c_smbus_write_word_swapped(client, INA2XX_CONFIG,
-				     data->config->config_default);
-	/* set current LSB to 1mA, shunt is in uOhms */
-	/* (equation 13 in datasheet) */
-	i2c_smbus_write_word_swapped(client, INA2XX_CALIBRATION,
-				     data->config->calibration_factor / shunt);
+	ret = i2c_smbus_write_word_swapped(client, INA2XX_CONFIG,
+					   data->config->config_default);
+	if (ret < 0) {
+		dev_err(dev,
+			"error writing to the config register: %d", ret);
+		return -ENODEV;
+	}
+
+	/*
+	 * Set current LSB to 1mA, shunt is in uOhms
+	 * (equation 13 in datasheet).
+	 */
+	ret = i2c_smbus_write_word_swapped(client, INA2XX_CALIBRATION,
+				data->config->calibration_factor / shunt);
+	if (ret < 0) {
+		dev_err(dev,
+			"error writing to the calibration register: %d", ret);
+		return -ENODEV;
+	}
 
 	data->client = client;
 	mutex_init(&data->update_lock);

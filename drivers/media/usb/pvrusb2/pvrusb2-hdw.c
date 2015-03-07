@@ -1382,6 +1382,29 @@ static int pvr2_locate_firmware(struct pvr2_hdw *hdw,
 			   "request_firmware fatal error with code=%d",ret);
 		return ret;
 	}
+	pvr2_trace(PVR2_TRACE_ERROR_LEGS,
+		   "***WARNING***"
+		   " Device %s firmware"
+		   " seems to be missing.",
+		   fwtypename);
+	pvr2_trace(PVR2_TRACE_ERROR_LEGS,
+		   "Did you install the pvrusb2 firmware files"
+		   " in their proper location?");
+	if (fwcount == 1) {
+		pvr2_trace(PVR2_TRACE_ERROR_LEGS,
+			   "request_firmware unable to locate %s file %s",
+			   fwtypename,fwnames[0]);
+	} else {
+		pvr2_trace(PVR2_TRACE_ERROR_LEGS,
+			   "request_firmware unable to locate"
+			   " one of the following %s files:",
+			   fwtypename);
+		for (idx = 0; idx < fwcount; idx++) {
+			pvr2_trace(PVR2_TRACE_ERROR_LEGS,
+				   "request_firmware: Failed to find %s",
+				   fwnames[idx]);
+		}
+	}
 	return ret;
 }
 
@@ -2887,7 +2910,7 @@ static void pvr2_subdev_update(struct pvr2_hdw *hdw)
 			v4l2_std_id vs;
 			vs = hdw->std_mask_cur;
 			v4l2_device_call_all(&hdw->v4l2_dev, 0,
-					     core, s_std, vs);
+					     video, s_std, vs);
 			pvr2_hdw_cx25840_vbi_hack(hdw);
 		}
 		hdw->tuner_signal_stale = !0;
@@ -2943,7 +2966,7 @@ static void pvr2_subdev_update(struct pvr2_hdw *hdw)
 		memset(&fmt, 0, sizeof(fmt));
 		fmt.width = hdw->res_hor_val;
 		fmt.height = hdw->res_ver_val;
-		fmt.code = V4L2_MBUS_FMT_FIXED;
+		fmt.code = MEDIA_BUS_FMT_FIXED;
 		pvr2_trace(PVR2_TRACE_CHIPS, "subdev v4l2 set_size(%dx%d)",
 			   fmt.width, fmt.height);
 		v4l2_device_call_all(&hdw->v4l2_dev, 0, video, s_mbus_fmt, &fmt);

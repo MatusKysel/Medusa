@@ -45,9 +45,7 @@ static int nommu_region_show(struct seq_file *m, struct vm_region *region)
 	file = region->vm_file;
 
 	if (file) {
-		struct inode *inode;
-		file = vmr_pr_or_file(region);
-		inode = file_inode(file);
+		struct inode *inode = file_inode(region->vm_file);
 		dev = inode->i_sb->s_dev;
 		ino = inode->i_ino;
 	}
@@ -133,4 +131,4 @@ static int __init proc_nommu_init(void)
 	return 0;
 }
 
-module_init(proc_nommu_init);
+fs_initcall(proc_nommu_init);

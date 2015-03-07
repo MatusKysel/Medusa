@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2008 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2008 - 2014 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -31,7 +31,7 @@
 #include "dvm/commands.h" /* needed for BT for now */
 
 /* Highest firmware API version supported */
-#define IWL6000_UCODE_API_MAX 4 /* v5-6 are supported but not released */
+#define IWL6000_UCODE_API_MAX 6
 #define IWL6050_UCODE_API_MAX 5
 #define IWL6000G2_UCODE_API_MAX 6
 #define IWL6035_UCODE_API_MAX 6
@@ -85,6 +85,7 @@ static const struct iwl_base_params iwl6000_base_params = {
 	.wd_timeout = IWL_DEF_WD_TIMEOUT,
 	.max_event_log_size = 512,
 	.shadow_reg_enable = false, /* TODO: fix bugs using this feature */
+	.scd_chain_ext_wa = true,
 };
 
 static const struct iwl_base_params iwl6050_base_params = {
@@ -97,6 +98,7 @@ static const struct iwl_base_params iwl6050_base_params = {
 	.wd_timeout = IWL_DEF_WD_TIMEOUT,
 	.max_event_log_size = 1024,
 	.shadow_reg_enable = false, /* TODO: fix bugs using this feature */
+	.scd_chain_ext_wa = true,
 };
 
 static const struct iwl_base_params iwl6000_g2_base_params = {
@@ -109,6 +111,7 @@ static const struct iwl_base_params iwl6000_g2_base_params = {
 	.wd_timeout = IWL_LONG_WD_TIMEOUT,
 	.max_event_log_size = 512,
 	.shadow_reg_enable = false, /* TODO: fix bugs using this feature */
+	.scd_chain_ext_wa = true,
 };
 
 static const struct iwl_ht_params iwl6000_ht_params = {

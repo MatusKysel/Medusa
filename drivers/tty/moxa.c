@@ -867,8 +867,13 @@ static int moxa_init_board(struct moxa_board_conf *brd, struct device *dev)
 	}
 
 	ret = request_firmware(&fw, file, dev);
-	if (ret)
+	if (ret) {
+		printk(KERN_ERR "MOXA: request_firmware failed. Make sure "
+				"you've placed '%s' file into your firmware "
+				"loader directory (e.g. /lib/firmware)\n",
+				file);
 		goto err_free;
+	}
 
 	ret = moxa_load_fw(brd, fw);
 
@@ -1091,7 +1096,7 @@ static int __init moxa_init(void)
 				continue;
 			}
 
-			printk(KERN_INFO "MOXA isa board found at 0x%.8lu and "
+			printk(KERN_INFO "MOXA isa board found at 0x%.8lx and "
 					"ready (%u ports, firmware loaded)\n",
 					baseaddr[i], brd->numPorts);
 

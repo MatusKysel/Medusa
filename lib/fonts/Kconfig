@@ -9,7 +9,7 @@ if FONT_SUPPORT
 
 config FONTS
 	bool "Select compiled-in fonts"
-	depends on FRAMEBUFFER_CONSOLE
+	depends on FRAMEBUFFER_CONSOLE || STI_CONSOLE
 	help
 	  Say Y here if you would like to use fonts other than the default
 	  your frame buffer console usually use.
@@ -22,7 +22,7 @@ config FONTS
 
 config FONT_8x8
 	bool "VGA 8x8 font" if FONTS
-	depends on FRAMEBUFFER_CONSOLE
+	depends on FRAMEBUFFER_CONSOLE || STI_CONSOLE
 	default y if !SPARC && !FONTS
 	help
 	  This is the "high resolution" font for the VGA frame buffer (the one
@@ -45,7 +45,7 @@ config FONT_8x16
 
 config FONT_6x11
 	bool "Mac console 6x11 font (not supported by all drivers)" if FONTS
-	depends on FRAMEBUFFER_CONSOLE
+	depends on FRAMEBUFFER_CONSOLE || STI_CONSOLE
 	default y if !SPARC && !FONTS && MAC
 	help
 	  Small console font with Macintosh-style high-half glyphs.  Some Mac
@@ -79,6 +79,14 @@ config FONT_MINI_4x6
 	bool "Mini 4x6 font"
 	depends on !SPARC && FONTS
 
+config FONT_6x10
+	bool "Medium-size 6x10 font"
+	depends on !SPARC && FONTS
+	help
+	  Medium-size console font. Suitable for framebuffer consoles on
+	  embedded devices with a 320x240 screen, to get a reasonable number
+	  of characters (53x24) that are still at a readable size.
+
 config FONT_SUN8x16
 	bool "Sparc console 8x16 font"
 	depends on FRAMEBUFFER_CONSOLE && (!SPARC && FONTS || SPARC)
@@ -109,6 +117,7 @@ config FONT_AUTOSELECT
 	depends on !FONT_PEARL_8x8
 	depends on !FONT_ACORN_8x8
 	depends on !FONT_MINI_4x6
+	depends on !FONT_6x10
 	depends on !FONT_SUN8x16
 	depends on !FONT_SUN12x22
 	depends on !FONT_10x18

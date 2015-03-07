@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel 82599 Virtual Function driver
-  Copyright(c) 1999 - 2012 Intel Corporation.
+  Copyright(c) 1999 - 2014 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -46,17 +46,43 @@
 /* wrapper around a pointer to a socket buffer,
  * so a DMA handle can be stored along with the buffer */
 struct ixgbevf_tx_buffer {
-	struct sk_buff *skb;
-	dma_addr_t dma;
-	unsigned long time_stamp;
 	union ixgbe_adv_tx_desc *next_to_watch;
-	u16 length;
-	u16 mapped_as_page;
+	unsigned long time_stamp;
+	struct sk_buff *skb;
+	unsigned int bytecount;
+	unsigned short gso_segs;
+	__be16 protocol;
+	DEFINE_DMA_UNMAP_ADDR(dma);
+	DEFINE_DMA_UNMAP_LEN(len);
+	u32 tx_flags;
 };
 
 struct ixgbevf_rx_buffer {
-	struct sk_buff *skb;
 	dma_addr_t dma;
+	struct page *page;
+	unsigned int page_offset;
+};
+
+struct ixgbevf_stats {
+	u64 packets;
+	u64 bytes;
+#ifdef BP_EXTENDED_STATS
+	u64 yields;
+	u64 misses;
+	u64 cleaned;
+#endif
+};
+
+struct ixgbevf_tx_queue_stats {
+	u64 restart_queue;
+	u64 tx_busy;
+	u64 tx_done_old;
+};
+
+struct ixgbevf_rx_queue_stats {
+	u64 alloc_rx_page_failed;
+	u64 alloc_rx_buff_failed;
+	u64 csum_err;
 };
 
 struct ixgbevf_ring {
@@ -66,35 +92,31 @@ struct ixgbevf_ring {
 	void *desc;			/* descriptor ring memory */
 	dma_addr_t dma;			/* phys. address of descriptor ring */
 	unsigned int size;		/* length in bytes */
-	unsigned int count;		/* amount of descriptors */
-	unsigned int next_to_use;
-	unsigned int next_to_clean;
+	u16 count;			/* amount of descriptors */
+	u16 next_to_use;
+	u16 next_to_clean;
+	u16 next_to_alloc;
 
-	int queue_index; /* needed for multiqueue queue management */
 	union {
 		struct ixgbevf_tx_buffer *tx_buffer_info;
 		struct ixgbevf_rx_buffer *rx_buffer_info;
 	};
 
-	u64			total_bytes;
-	u64			total_packets;
-	struct u64_stats_sync	syncp;
-	u64 hw_csum_rx_error;
-	u64 hw_csum_rx_good;
-#ifdef BP_EXTENDED_STATS
-	u64 bp_yields;
-	u64 bp_misses;
-	u64 bp_cleaned;
-#endif
+	struct ixgbevf_stats stats;
+	struct u64_stats_sync syncp;
+	union {
+		struct ixgbevf_tx_queue_stats tx_stats;
+		struct ixgbevf_rx_queue_stats rx_stats;
+	};
 
-	u16 head;
-	u16 tail;
+	u64 hw_csum_rx_error;
+	u8 __iomem *tail;
+	struct sk_buff *skb;
 
 	u16 reg_idx; /* holds the special value that gets the hardware register
 		      * offset associated with this ring, which is different
 		      * for DCB and RSS modes */
-
-	u16 rx_buf_len;
+	int queue_index; /* needed for multiqueue queue management */
 };
 
 /* How many Rx Buffers do we bundle into one write to the hardware ? */
@@ -112,12 +134,10 @@ struct ixgbevf_ring {
 
 /* Supported Rx Buffer Sizes */
 #define IXGBEVF_RXBUFFER_256   256    /* Used for packet split */
-#define IXGBEVF_RXBUFFER_2K    2048
-#define IXGBEVF_RXBUFFER_4K    4096
-#define IXGBEVF_RXBUFFER_8K    8192
-#define IXGBEVF_RXBUFFER_10K   10240
+#define IXGBEVF_RXBUFFER_2048  2048
 
 #define IXGBEVF_RX_HDR_SIZE IXGBEVF_RXBUFFER_256
+#define IXGBEVF_RX_BUFSZ    IXGBEVF_RXBUFFER_2048
 
 #define MAXIMUM_ETHERNET_VLAN_SIZE (VLAN_ETH_FRAME_LEN + ETH_FCS_LEN)
 
@@ -125,8 +145,6 @@ struct ixgbevf_ring {
 #define IXGBE_TX_FLAGS_VLAN		(u32)(1 << 1)
 #define IXGBE_TX_FLAGS_TSO		(u32)(1 << 2)
 #define IXGBE_TX_FLAGS_IPV4		(u32)(1 << 3)
-#define IXGBE_TX_FLAGS_FCOE		(u32)(1 << 4)
-#define IXGBE_TX_FLAGS_FSO		(u32)(1 << 5)
 #define IXGBE_TX_FLAGS_VLAN_MASK	0xffff0000
 #define IXGBE_TX_FLAGS_VLAN_PRIO_MASK	0x0000e000
 #define IXGBE_TX_FLAGS_VLAN_SHIFT	16
@@ -188,7 +206,7 @@ static inline bool ixgbevf_qv_lock_napi(struct ixgbevf_q_vector *q_vector)
 		q_vector->state |= IXGBEVF_QV_STATE_NAPI_YIELD;
 		rc = false;
 #ifdef BP_EXTENDED_STATS
-		q_vector->tx.ring->bp_yields++;
+		q_vector->tx.ring->stats.yields++;
 #endif
 	} else {
 		/* we don't care if someone yielded */
@@ -223,7 +241,7 @@ static inline bool ixgbevf_qv_lock_poll(struct ixgbevf_q_vector *q_vector)
 		q_vector->state |= IXGBEVF_QV_STATE_POLL_YIELD;
 		rc = false;
 #ifdef BP_EXTENDED_STATS
-		q_vector->rx.ring->bp_yields++;
+		q_vector->rx.ring->stats.yields++;
 #endif
 	} else {
 		/* preserve yield marks */
@@ -262,6 +280,7 @@ static inline bool ixgbevf_qv_disable(struct ixgbevf_q_vector *q_vector)
 	spin_lock_bh(&q_vector->lock);
 	if (q_vector->state & IXGBEVF_QV_OWNED)
 		rc = false;
+	q_vector->state |= IXGBEVF_QV_STATE_DISABLED;
 	spin_unlock_bh(&q_vector->lock);
 	return rc;
 }
@@ -286,12 +305,24 @@ static inline bool ixgbevf_qv_disable(struct ixgbevf_q_vector *q_vector)
 	((_eitr) ? (1000000000 / ((_eitr) * 256)) : 8)
 #define EITR_REG_TO_INTS_PER_SEC EITR_INTS_PER_SEC_TO_REG
 
+/* ixgbevf_test_staterr - tests bits in Rx descriptor status and error fields */
+static inline __le32 ixgbevf_test_staterr(union ixgbe_adv_rx_desc *rx_desc,
+					  const u32 stat_err_bits)
+{
+	return rx_desc->wb.upper.status_error & cpu_to_le32(stat_err_bits);
+}
+
 static inline u16 ixgbevf_desc_unused(struct ixgbevf_ring *ring)
 {
 	u16 ntc = ring->next_to_clean;
 	u16 ntu = ring->next_to_use;
 
 	return ((ntc > ntu) ? 0 : ring->count) + ntc - ntu - 1;
+}
+
+static inline void ixgbevf_write_tail(struct ixgbevf_ring *ring, u32 value)
+{
+	writel(value, ring->tail);
 }
 
 #define IXGBEVF_RX_DESC(R, i)	    \
@@ -313,9 +344,10 @@ static inline u16 ixgbevf_desc_unused(struct ixgbevf_ring *ring)
 
 /* board specific private data structure */
 struct ixgbevf_adapter {
-	struct timer_list watchdog_timer;
+	/* this field must be first, see ixgbevf_process_skb_fields */
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
-	u16 bd_number;
+
+	struct timer_list watchdog_timer;
 	struct work_struct reset_task;
 	struct ixgbevf_q_vector *q_vector[MAX_MSIX_Q_VECTORS];
 
@@ -328,25 +360,17 @@ struct ixgbevf_adapter {
 	u32 eims_other;
 
 	/* TX */
-	struct ixgbevf_ring *tx_ring;	/* One per active queue */
 	int num_tx_queues;
+	struct ixgbevf_ring *tx_ring[MAX_TX_QUEUES]; /* One per active queue */
 	u64 restart_queue;
-	u64 hw_csum_tx_good;
-	u64 lsc_int;
-	u64 hw_tso_ctxt;
-	u64 hw_tso6_ctxt;
 	u32 tx_timeout_count;
 
 	/* RX */
-	struct ixgbevf_ring *rx_ring;	/* One per active queue */
 	int num_rx_queues;
+	struct ixgbevf_ring *rx_ring[MAX_TX_QUEUES]; /* One per active queue */
 	u64 hw_csum_rx_error;
 	u64 hw_rx_no_dma_resources;
-	u64 hw_csum_rx_good;
-	u64 non_eop_descs;
 	int num_msix_vectors;
-	struct msix_entry *msix_entries;
-
 	u32 alloc_rx_page_failed;
 	u32 alloc_rx_buff_failed;
 
@@ -355,7 +379,10 @@ struct ixgbevf_adapter {
 	 */
 	u32 flags;
 #define IXGBE_FLAG_IN_WATCHDOG_TASK             (u32)(1)
-#define IXGBE_FLAG_IN_NETPOLL                   (u32)(1 << 1)
+
+#define IXGBEVF_FLAG_QUEUE_RESET_REQUESTED	(u32)(1 << 2)
+
+	struct msix_entry *msix_entries;
 
 	/* OS defined structs */
 	struct net_device *netdev;
@@ -364,9 +391,10 @@ struct ixgbevf_adapter {
 	/* structs defined in ixgbe_vf.h */
 	struct ixgbe_hw hw;
 	u16 msg_enable;
-	struct ixgbevf_hw_stats stats;
 	/* Interrupt Throttle Rate */
 	u32 eitr_param;
+
+	struct ixgbevf_hw_stats stats;
 
 	unsigned long state;
 	u64 tx_busy;
@@ -383,32 +411,35 @@ struct ixgbevf_adapter {
 	u64 bp_tx_missed;
 #endif
 
+	u8 __iomem *io_addr; /* Mainly for iounmap use */
 	u32 link_speed;
 	bool link_up;
 
-	struct work_struct watchdog_task;
-
 	spinlock_t mbx_lock;
+
+	struct work_struct watchdog_task;
 };
 
 enum ixbgevf_state_t {
 	__IXGBEVF_TESTING,
 	__IXGBEVF_RESETTING,
-	__IXGBEVF_DOWN
+	__IXGBEVF_DOWN,
+	__IXGBEVF_DISABLED,
+	__IXGBEVF_REMOVING,
+	__IXGBEVF_WORK_INIT,
 };
-
-struct ixgbevf_cb {
-	struct sk_buff *prev;
-};
-#define IXGBE_CB(skb) ((struct ixgbevf_cb *)(skb)->cb)
 
 enum ixgbevf_boards {
 	board_82599_vf,
 	board_X540_vf,
+	board_X550_vf,
+	board_X550EM_x_vf,
 };
 
 extern const struct ixgbevf_info ixgbevf_82599_vf_info;
 extern const struct ixgbevf_info ixgbevf_X540_vf_info;
+extern const struct ixgbevf_info ixgbevf_X550_vf_info;
+extern const struct ixgbevf_info ixgbevf_X550EM_x_vf_info;
 extern const struct ixgbe_mbx_operations ixgbevf_mbx_ops;
 
 /* needed by ethtool.c */
@@ -420,10 +451,10 @@ void ixgbevf_down(struct ixgbevf_adapter *adapter);
 void ixgbevf_reinit_locked(struct ixgbevf_adapter *adapter);
 void ixgbevf_reset(struct ixgbevf_adapter *adapter);
 void ixgbevf_set_ethtool_ops(struct net_device *netdev);
-int ixgbevf_setup_rx_resources(struct ixgbevf_adapter *, struct ixgbevf_ring *);
-int ixgbevf_setup_tx_resources(struct ixgbevf_adapter *, struct ixgbevf_ring *);
-void ixgbevf_free_rx_resources(struct ixgbevf_adapter *, struct ixgbevf_ring *);
-void ixgbevf_free_tx_resources(struct ixgbevf_adapter *, struct ixgbevf_ring *);
+int ixgbevf_setup_rx_resources(struct ixgbevf_ring *);
+int ixgbevf_setup_tx_resources(struct ixgbevf_ring *);
+void ixgbevf_free_rx_resources(struct ixgbevf_ring *);
+void ixgbevf_free_tx_resources(struct ixgbevf_ring *);
 void ixgbevf_update_stats(struct ixgbevf_adapter *adapter);
 int ethtool_ioctl(struct ifreq *ifr);
 

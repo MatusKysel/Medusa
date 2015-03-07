@@ -146,8 +146,19 @@ void bus_remove_file(struct bus_type *bus, struct bus_attribute *attr)
 }
 EXPORT_SYMBOL_GPL(bus_remove_file);
 
+static void bus_release(struct kobject *kobj)
+{
+	struct subsys_private *priv =
+		container_of(kobj, typeof(*priv), subsys.kobj);
+	struct bus_type *bus = priv->bus;
+
+	kfree(priv);
+	bus->p = NULL;
+}
+
 static struct kobj_type bus_ktype = {
 	.sysfs_ops	= &bus_sysfs_ops,
+	.release	= bus_release,
 };
 
 static int bus_uevent_filter(struct kset *kset, struct kobject *kobj)
@@ -243,13 +254,15 @@ static ssize_t store_drivers_probe(struct bus_type *bus,
 				   const char *buf, size_t count)
 {
 	struct device *dev;
+	int err = -EINVAL;
 
 	dev = bus_find_device_by_name(bus, NULL, buf);
 	if (!dev)
 		return -ENODEV;
-	if (bus_rescan_devices_helper(dev, NULL) != 0)
-		return -EINVAL;
-	return count;
+	if (bus_rescan_devices_helper(dev, NULL) == 0)
+		err = count;
+	put_device(dev);
+	return err;
 }
 
 static struct device *next_device(struct klist_iter *i)
@@ -953,8 +966,6 @@ void bus_unregister(struct bus_type *bus)
 	kset_unregister(bus->p->devices_kset);
 	bus_remove_file(bus, &bus_attr_uevent);
 	kset_unregister(&bus->p->subsys);
-	kfree(bus->p);
-	bus->p = NULL;
 }
 EXPORT_SYMBOL_GPL(bus_unregister);
 
@@ -1209,7 +1220,7 @@ err_dev:
  * with the name of the subsystem. The root device can carry subsystem-
  * wide attributes. All registered devices are below this single root
  * device and are named after the subsystem with a simple enumeration
- * number appended. The registered devices are not explicitely named;
+ * number appended. The registered devices are not explicitly named;
  * only 'id' in the device needs to be set.
  *
  * Do not use this interface for anything new, it exists for compatibility

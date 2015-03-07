@@ -32,9 +32,9 @@ extern medusa_answer_t medusa_rename(struct dentry *dentry, const char * newname
  * l2/evtype_getfile.c. Look there before using any of these routines.
  */
 extern int file_kobj_validate_dentry(struct dentry * dentry, struct vfsmount * mnt);
-extern void medusa_get_upper_and_parent(struct nameidata * ndsource,
-		struct nameidata * ndupperp, struct nameidata * ndparentp);
-extern void medusa_put_upper_and_parent(struct nameidata * ndupper, struct nameidata * ndparent);
+extern void medusa_get_upper_and_parent(struct path * ndsource,
+		struct path * ndupperp, struct path * ndparentp);
+extern void medusa_put_upper_and_parent(struct path * ndupper, struct path * ndparent);
 extern struct vfsmount * medusa_evocate_mnt(struct dentry *dentry);
 extern void medusa_clean_inode(struct inode * inode);
 extern medusa_answer_t medusa_notify_change(struct dentry *dentry, struct iattr * attr);

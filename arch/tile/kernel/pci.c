@@ -178,8 +178,8 @@ int __init tile_pci_init(void)
 				continue;
 			hv_cfg_fd1 = tile_pcie_open(i, 1);
 			if (hv_cfg_fd1 < 0) {
-				pr_err("PCI: Couldn't open config fd to HV "
-				    "for controller %d\n", i);
+				pr_err("PCI: Couldn't open config fd to HV for controller %d\n",
+				       i);
 				goto err_cont;
 			}
 
@@ -250,8 +250,6 @@ static void fixup_read_and_payload_sizes(void)
 
 	/* Scan for the smallest maximum payload size. */
 	for_each_pci_dev(dev) {
-		u32 devcap;
-
 		if (!pci_is_pcie(dev))
 			continue;
 
@@ -425,8 +423,7 @@ int pcibios_enable_device(struct pci_dev *dev, int mask)
 		for (i = 0; i < 6; i++) {
 			r = &dev->resource[i];
 			if (r->flags & IORESOURCE_UNSET) {
-				pr_err("PCI: Device %s not available "
-				       "because of resource collisions\n",
+				pr_err("PCI: Device %s not available because of resource collisions\n",
 				       pci_name(dev));
 				return -EINVAL;
 			}

@@ -26,6 +26,7 @@
 #include <drm/drmP.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/omap_drm.h>
+#include <drm/drm_gem.h>
 #include <linux/platform_data/omap_drm.h>
 
 
@@ -119,13 +120,6 @@ struct omap_drm_private {
 	struct omap_drm_irq error_handler;
 };
 
-/* this should probably be in drm-core to standardize amongst drivers */
-#define DRM_ROTATE_0	0
-#define DRM_ROTATE_90	1
-#define DRM_ROTATE_180	2
-#define DRM_ROTATE_270	3
-#define DRM_REFLECT_X	4
-#define DRM_REFLECT_Y	5
 
 #ifdef CONFIG_DEBUG_FS
 int omap_debugfs_init(struct drm_minor *minor);
@@ -141,10 +135,12 @@ int omap_gem_resume(struct device *dev);
 
 int omap_irq_enable_vblank(struct drm_device *dev, int crtc_id);
 void omap_irq_disable_vblank(struct drm_device *dev, int crtc_id);
-irqreturn_t omap_irq_handler(DRM_IRQ_ARGS);
+irqreturn_t omap_irq_handler(int irq, void *arg);
 void omap_irq_preinstall(struct drm_device *dev);
 int omap_irq_postinstall(struct drm_device *dev);
 void omap_irq_uninstall(struct drm_device *dev);
+void __omap_irq_register(struct drm_device *dev, struct omap_drm_irq *irq);
+void __omap_irq_unregister(struct drm_device *dev, struct omap_drm_irq *irq);
 void omap_irq_register(struct drm_device *dev, struct omap_drm_irq *irq);
 void omap_irq_unregister(struct drm_device *dev, struct omap_drm_irq *irq);
 int omap_drm_irq_uninstall(struct drm_device *dev);
@@ -158,8 +154,10 @@ enum omap_channel omap_crtc_channel(struct drm_crtc *crtc);
 int omap_crtc_apply(struct drm_crtc *crtc,
 		struct omap_drm_apply *apply);
 void omap_crtc_pre_init(void);
+void omap_crtc_pre_uninit(void);
 struct drm_crtc *omap_crtc_init(struct drm_device *dev,
 		struct drm_plane *plane, enum omap_channel channel, int id);
+void omap_crtc_flush(struct drm_crtc *crtc);
 
 struct drm_plane *omap_plane_init(struct drm_device *dev,
 		int plane_id, bool private_plane);
@@ -190,6 +188,7 @@ struct drm_encoder *omap_connector_attached_encoder(
 		struct drm_connector *connector);
 void omap_connector_flush(struct drm_connector *connector,
 		int x, int y, int w, int h);
+bool omap_connector_get_hdmi_mode(struct drm_connector *connector);
 
 void copy_timings_omap_to_drm(struct drm_display_mode *mode,
 		struct omap_video_timings *timings);

@@ -17,7 +17,6 @@
  */
 
 #include <linux/slab.h>
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/mtd/mtd.h>
@@ -291,7 +290,6 @@ static struct platform_driver ams_delta_nand_driver = {
 	.remove		= ams_delta_cleanup,
 	.driver		= {
 		.name	= "ams-delta-nand",
-		.owner	= THIS_MODULE,
 	},
 };
 

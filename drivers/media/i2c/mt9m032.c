@@ -323,7 +323,7 @@ static int mt9m032_enum_mbus_code(struct v4l2_subdev *subdev,
 	if (code->index != 0)
 		return -EINVAL;
 
-	code->code = V4L2_MBUS_FMT_Y8_1X8;
+	code->code = MEDIA_BUS_FMT_Y8_1X8;
 	return 0;
 }
 
@@ -331,7 +331,7 @@ static int mt9m032_enum_frame_size(struct v4l2_subdev *subdev,
 				   struct v4l2_subdev_fh *fh,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
-	if (fse->index != 0 || fse->code != V4L2_MBUS_FMT_Y8_1X8)
+	if (fse->index != 0 || fse->code != MEDIA_BUS_FMT_Y8_1X8)
 		return -EINVAL;
 
 	fse->min_width = MT9M032_COLUMN_SIZE_DEF;
@@ -459,13 +459,15 @@ static int mt9m032_set_pad_crop(struct v4l2_subdev *subdev,
 			  MT9M032_COLUMN_START_MAX);
 	rect.top = clamp(ALIGN(crop->rect.top, 2), MT9M032_ROW_START_MIN,
 			 MT9M032_ROW_START_MAX);
-	rect.width = clamp(ALIGN(crop->rect.width, 2), MT9M032_COLUMN_SIZE_MIN,
-			   MT9M032_COLUMN_SIZE_MAX);
-	rect.height = clamp(ALIGN(crop->rect.height, 2), MT9M032_ROW_SIZE_MIN,
-			    MT9M032_ROW_SIZE_MAX);
+	rect.width = clamp_t(unsigned int, ALIGN(crop->rect.width, 2),
+			     MT9M032_COLUMN_SIZE_MIN, MT9M032_COLUMN_SIZE_MAX);
+	rect.height = clamp_t(unsigned int, ALIGN(crop->rect.height, 2),
+			      MT9M032_ROW_SIZE_MIN, MT9M032_ROW_SIZE_MAX);
 
-	rect.width = min(rect.width, MT9M032_PIXEL_ARRAY_WIDTH - rect.left);
-	rect.height = min(rect.height, MT9M032_PIXEL_ARRAY_HEIGHT - rect.top);
+	rect.width = min_t(unsigned int, rect.width,
+			   MT9M032_PIXEL_ARRAY_WIDTH - rect.left);
+	rect.height = min_t(unsigned int, rect.height,
+			    MT9M032_PIXEL_ARRAY_HEIGHT - rect.top);
 
 	__crop = __mt9m032_get_pad_crop(sensor, fh, crop->which);
 
@@ -757,7 +759,7 @@ static int mt9m032_probe(struct i2c_client *client,
 
 	sensor->format.width = sensor->crop.width;
 	sensor->format.height = sensor->crop.height;
-	sensor->format.code = V4L2_MBUS_FMT_Y8_1X8;
+	sensor->format.code = MEDIA_BUS_FMT_Y8_1X8;
 	sensor->format.field = V4L2_FIELD_NONE;
 	sensor->format.colorspace = V4L2_COLORSPACE_SRGB;
 

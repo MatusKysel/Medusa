@@ -48,7 +48,7 @@ int __init sexec_acctype_init(void) {
  */
 static medusa_answer_t medusa_do_sexec(struct linux_binprm * bprm);
 
-#define DENTRY (bprm->file->f_dentry)
+#define DENTRY (bprm->file->f_path.dentry)
 
 medusa_answer_t medusa_sexec(struct linux_binprm * bprm)
 {

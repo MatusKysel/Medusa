@@ -477,7 +477,7 @@ static struct dma_async_tx_descriptor *k3_dma_prep_slave_sg(
 	dma_addr_t addr, src = 0, dst = 0;
 	int num = sglen, i;
 
-	if (sgl == 0)
+	if (sgl == NULL)
 		return NULL;
 
 	for_each_sg(sgl, sg, sglen, i) {
@@ -722,7 +722,6 @@ static int k3_dma_probe(struct platform_device *op)
 	d->slave.device_issue_pending = k3_dma_issue_pending;
 	d->slave.device_control = k3_dma_control;
 	d->slave.copy_align = DMA_ALIGN;
-	d->slave.chancnt = d->dma_requests;
 
 	/* init virtual channel */
 	d->chans = devm_kzalloc(&op->dev,
@@ -787,6 +786,7 @@ static int k3_dma_remove(struct platform_device *op)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int k3_dma_suspend(struct device *dev)
 {
 	struct k3_dma_dev *d = dev_get_drvdata(dev);
@@ -816,13 +816,13 @@ static int k3_dma_resume(struct device *dev)
 	k3_dma_enable_dma(d, true);
 	return 0;
 }
+#endif
 
-SIMPLE_DEV_PM_OPS(k3_dma_pmops, k3_dma_suspend, k3_dma_resume);
+static SIMPLE_DEV_PM_OPS(k3_dma_pmops, k3_dma_suspend, k3_dma_resume);
 
 static struct platform_driver k3_pdma_driver = {
 	.driver		= {
 		.name	= DRIVER_NAME,
-		.owner  = THIS_MODULE,
 		.pm	= &k3_dma_pmops,
 		.of_match_table = k3_pdma_dt_ids,
 	},

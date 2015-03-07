@@ -48,16 +48,15 @@ static struct dentry * evocate_dentry(struct inode * inode)
 
 	/* XXX: are we really supposed to grab a dcache lock here? */
 	//spin_lock(&dcache_lock); JK
-	rcu_read_lock();
+	spin_lock(&inode->i_lock); // Bugfix March 2015 JK
 	list_for_each(p, (inode->i_dentry.first)) {
-		if (d_count(list_entry(p, struct dentry, d_alias))) {
-			dentry = dget(list_entry(p, struct dentry, d_alias));
-			//spin_unlock(&dcache_lock);
-			rcu_read_unlock();
+		if (d_count(list_entry(p, struct dentry, d_u.d_alias))) {
+			dentry = dget(list_entry(p, struct dentry, d_u.d_alias));
+			spin_unlock(&inode->i_lock); // Bugfix JK March 2015
 			return dentry;
 		}
 	}
-	rcu_read_unlock();
+	spin_unlock(&inode->i_lock); // Bugfix JK March 2015
 	//spin_unlock(&dcache_lock);
 	return NULL;
 }

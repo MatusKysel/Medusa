@@ -122,12 +122,12 @@ void file_kobj_dentry2string(struct dentry * dentry, char * buf)
 
 	if( IS_ROOT(dentry) )
 	{
-		struct nameidata ndcurrent, ndupper;
+		struct path ndcurrent, ndupper;
 		
-		ndcurrent.path.dentry = dentry;
-		ndcurrent.path.mnt = NULL;
+		ndcurrent.dentry = dentry;
+		ndcurrent.mnt = NULL;
 		medusa_get_upper_and_parent(&ndcurrent,&ndupper,NULL);
-		dentry=dget(ndupper.path.dentry);
+		dentry=dget(ndupper.dentry);
 		medusa_put_upper_and_parent(&ndupper, NULL);
 	}
 	else

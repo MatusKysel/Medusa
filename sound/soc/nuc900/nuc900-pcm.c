@@ -32,9 +32,6 @@ static const struct snd_pcm_hardware nuc900_pcm_hardware = {
 					SNDRV_PCM_INFO_MMAP_VALID |
 					SNDRV_PCM_INFO_PAUSE |
 					SNDRV_PCM_INFO_RESUME,
-	.formats		= SNDRV_PCM_FMTBIT_S16_LE,
-	.channels_min		= 1,
-	.channels_max		= 2,
 	.buffer_bytes_max	= 4*1024,
 	.period_bytes_min	= 1*1024,
 	.period_bytes_max	= 4*1024,
@@ -350,7 +347,6 @@ static int nuc900_soc_platform_remove(struct platform_device *pdev)
 static struct platform_driver nuc900_pcm_driver = {
 	.driver = {
 			.name = "nuc900-pcm-audio",
-			.owner = THIS_MODULE,
 	},
 
 	.probe = nuc900_soc_platform_probe,

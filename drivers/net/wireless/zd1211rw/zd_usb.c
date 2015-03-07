@@ -15,8 +15,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/kernel.h>
@@ -121,9 +120,16 @@ static void int_urb_complete(struct urb *urb);
 static int request_fw_file(
 	const struct firmware **fw, const char *name, struct device *device)
 {
+	int r;
+
 	dev_dbg_f(device, "fw name %s\n", name);
 
-	return request_firmware(fw, name, device);
+	r = request_firmware(fw, name, device);
+	if (r)
+		dev_err(device,
+		       "Could not load firmware file %s. Error number %d\n",
+		       name, r);
+	return r;
 }
 
 static inline u16 get_bcdDevice(const struct usb_device *udev)

@@ -21,7 +21,7 @@ static void comm_str__put(struct comm_str *cs)
 {
 	if (!--cs->ref) {
 		rb_erase(&cs->rb_node, &comm_str_root);
-		free(cs->str);
+		zfree(&cs->str);
 		free(cs);
 	}
 }
@@ -74,7 +74,7 @@ static struct comm_str *comm_str__findnew(const char *str, struct rb_root *root)
 	return new;
 }
 
-struct comm *comm__new(const char *str, u64 timestamp)
+struct comm *comm__new(const char *str, u64 timestamp, bool exec)
 {
 	struct comm *comm = zalloc(sizeof(*comm));
 
@@ -82,6 +82,7 @@ struct comm *comm__new(const char *str, u64 timestamp)
 		return NULL;
 
 	comm->start = timestamp;
+	comm->exec = exec;
 
 	comm->comm_str = comm_str__findnew(str, &comm_str_root);
 	if (!comm->comm_str) {
@@ -94,19 +95,22 @@ struct comm *comm__new(const char *str, u64 timestamp)
 	return comm;
 }
 
-void comm__override(struct comm *comm, const char *str, u64 timestamp)
+int comm__override(struct comm *comm, const char *str, u64 timestamp, bool exec)
 {
-	struct comm_str *old = comm->comm_str;
+	struct comm_str *new, *old = comm->comm_str;
 
-	comm->comm_str = comm_str__findnew(str, &comm_str_root);
-	if (!comm->comm_str) {
-		comm->comm_str = old;
-		return;
-	}
+	new = comm_str__findnew(str, &comm_str_root);
+	if (!new)
+		return -ENOMEM;
 
-	comm->start = timestamp;
-	comm_str__get(comm->comm_str);
+	comm_str__get(new);
 	comm_str__put(old);
+	comm->comm_str = new;
+	comm->start = timestamp;
+	if (exec)
+		comm->exec = true;
+
+	return 0;
 }
 
 void comm__free(struct comm *comm)

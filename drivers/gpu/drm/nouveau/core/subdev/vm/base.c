@@ -72,13 +72,7 @@ nouveau_vm_map_at(struct nouveau_vma *vma, u64 delta, struct nouveau_mem *node)
 	vmm->flush(vm);
 }
 
-void
-nouveau_vm_map(struct nouveau_vma *vma, struct nouveau_mem *node)
-{
-	nouveau_vm_map_at(vma, 0, node);
-}
-
-void
+static void
 nouveau_vm_map_sg_table(struct nouveau_vma *vma, u64 delta, u64 length,
 			struct nouveau_mem *mem)
 {
@@ -136,7 +130,7 @@ finish:
 	vmm->flush(vm);
 }
 
-void
+static void
 nouveau_vm_map_sg(struct nouveau_vma *vma, u64 delta, u64 length,
 		  struct nouveau_mem *mem)
 {
@@ -172,6 +166,18 @@ nouveau_vm_map_sg(struct nouveau_vma *vma, u64 delta, u64 length,
 	}
 
 	vmm->flush(vm);
+}
+
+void
+nouveau_vm_map(struct nouveau_vma *vma, struct nouveau_mem *node)
+{
+	if (node->sg)
+		nouveau_vm_map_sg_table(vma, 0, node->size << 12, node);
+	else
+	if (node->pages)
+		nouveau_vm_map_sg(vma, 0, node->size << 12, node);
+	else
+		nouveau_vm_map_at(vma, 0, node);
 }
 
 void
@@ -290,7 +296,7 @@ nouveau_vm_get(struct nouveau_vm *vm, u64 size, u32 page_shift,
 	int ret;
 
 	mutex_lock(&nv_subdev(vmm)->mutex);
-	ret = nouveau_mm_head(&vm->mm, page_shift, msize, msize, align,
+	ret = nouveau_mm_head(&vm->mm, 0, page_shift, msize, msize, align,
 			     &vma->node);
 	if (unlikely(ret != 0)) {
 		mutex_unlock(&nv_subdev(vmm)->mutex);

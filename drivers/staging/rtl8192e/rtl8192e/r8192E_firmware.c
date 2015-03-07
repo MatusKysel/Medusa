@@ -250,68 +250,55 @@ bool init_firmware(struct net_device *dev)
 			 " firmware state\n");
 	}
 
-	priv->firmware_source = FW_SOURCE_IMG_FILE;
 	for (init_step = starting_state; init_step <= FW_INIT_STEP2_DATA;
 	     init_step++) {
 		if (rst_opt == OPT_SYSTEM_RESET) {
-			switch (priv->firmware_source) {
-			case FW_SOURCE_IMG_FILE:
-			{
-				if (pfirmware->firmware_buf_size[init_step] == 0) {
-					const char *fw_name[3] = {
-							RTL8192E_BOOT_IMG_FW,
-							RTL8192E_MAIN_IMG_FW,
-							RTL8192E_DATA_IMG_FW
-					};
-					const struct firmware	*fw_entry;
-					int rc;
-					rc = request_firmware(&fw_entry,
-					 fw_name[init_step], &priv->pdev->dev);
-					if (rc < 0) {
-						RT_TRACE(COMP_FIRMWARE, "request firm"
-						 "ware fail!\n");
-						goto download_firmware_fail;
-					}
-					if (fw_entry->size >
+			if (pfirmware->firmware_buf_size[init_step] == 0) {
+				const char *fw_name[3] = {
+					RTL8192E_BOOT_IMG_FW,
+					RTL8192E_MAIN_IMG_FW,
+					RTL8192E_DATA_IMG_FW
+				};
+				const struct firmware *fw_entry;
+				int rc;
+
+				rc = request_firmware(&fw_entry,
+						      fw_name[init_step],
+						      &priv->pdev->dev);
+				if (rc < 0) {
+					RT_TRACE(COMP_FIRMWARE, "request firmware fail!\n");
+					goto download_firmware_fail;
+				}
+				if (fw_entry->size >
 				    sizeof(pfirmware->firmware_buf[init_step])) {
-						RT_TRACE(COMP_FIRMWARE, "img file size "
+					RT_TRACE(COMP_FIRMWARE, "img file size "
 						 "exceed the container struct "
 						 "buffer fail!\n");
-						goto download_firmware_fail;
-					}
-
-					if (init_step != FW_INIT_STEP1_MAIN) {
-						memcpy(pfirmware->firmware_buf[init_step],
-					       fw_entry->data, fw_entry->size);
-						pfirmware->firmware_buf_size[init_step] =
-					       fw_entry->size;
-
-					} else {
-						memset(pfirmware->firmware_buf[init_step],
-					       0, 128);
-						memcpy(&pfirmware->firmware_buf[init_step][128],
-					       fw_entry->data, fw_entry->size);
-						pfirmware->firmware_buf_size[init_step] =
-							 fw_entry->size + 128;
-					}
-
-					if (rst_opt == OPT_SYSTEM_RESET)
-						release_firmware(fw_entry);
+					goto download_firmware_fail;
 				}
-				mapped_file = pfirmware->firmware_buf[init_step];
-				file_length = pfirmware->firmware_buf_size[init_step];
-				break;
+
+				if (init_step != FW_INIT_STEP1_MAIN) {
+					memcpy(pfirmware->firmware_buf[init_step],
+					       fw_entry->data, fw_entry->size);
+					pfirmware->firmware_buf_size[init_step] =
+						fw_entry->size;
+
+				} else {
+					memset(pfirmware->firmware_buf[init_step],
+					       0, 128);
+					memcpy(&pfirmware->firmware_buf[init_step][128],
+					       fw_entry->data, fw_entry->size);
+					pfirmware->firmware_buf_size[init_step] =
+						fw_entry->size + 128;
+				}
+
+				if (rst_opt == OPT_SYSTEM_RESET)
+					release_firmware(fw_entry);
 			}
-
-			default:
-				break;
-			}
-
-
-		} else if (rst_opt == OPT_FIRMWARE_RESET) {
-			mapped_file = pfirmware->firmware_buf[init_step];
-			file_length = pfirmware->firmware_buf_size[init_step];
 		}
+
+		mapped_file = pfirmware->firmware_buf[init_step];
+		file_length = pfirmware->firmware_buf_size[init_step];
 
 		rt_status = fw_download_code(dev, mapped_file, file_length);
 		if (!rt_status) {

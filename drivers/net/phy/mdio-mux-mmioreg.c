@@ -15,7 +15,6 @@
 #include <linux/of_address.h>
 #include <linux/of_mdio.h>
 #include <linux/module.h>
-#include <linux/init.h>
 #include <linux/phy.h>
 #include <linux/mdio-mux.h>
 
@@ -157,7 +156,6 @@ MODULE_DEVICE_TABLE(of, mdio_mux_mmioreg_match);
 static struct platform_driver mdio_mux_mmioreg_driver = {
 	.driver = {
 		.name		= "mdio-mux-mmioreg",
-		.owner		= THIS_MODULE,
 		.of_match_table = mdio_mux_mmioreg_match,
 	},
 	.probe		= mdio_mux_mmioreg_probe,

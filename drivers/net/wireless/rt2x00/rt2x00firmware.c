@@ -14,9 +14,7 @@
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the
-	Free Software Foundation, Inc.,
-	59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+	along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -51,8 +49,10 @@ static int rt2x00lib_request_firmware(struct rt2x00_dev *rt2x00dev)
 	rt2x00_info(rt2x00dev, "Loading firmware file '%s'\n", fw_name);
 
 	retval = request_firmware(&fw, fw_name, device);
-	if (retval)
+	if (retval) {
+		rt2x00_err(rt2x00dev, "Failed to request Firmware\n");
 		return retval;
+	}
 
 	if (!fw || !fw->size || !fw->data) {
 		rt2x00_err(rt2x00dev, "Failed to read Firmware\n");

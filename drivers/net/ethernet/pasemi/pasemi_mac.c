@@ -13,11 +13,9 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
@@ -1839,10 +1837,8 @@ pasemi_mac_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return err;
 
 out:
-	if (mac->iob_pdev)
-		pci_dev_put(mac->iob_pdev);
-	if (mac->dma_pdev)
-		pci_dev_put(mac->dma_pdev);
+	pci_dev_put(mac->iob_pdev);
+	pci_dev_put(mac->dma_pdev);
 
 	free_netdev(dev);
 out_disable_device:
@@ -1873,7 +1869,7 @@ static void pasemi_mac_remove(struct pci_dev *pdev)
 	free_netdev(netdev);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(pasemi_mac_pci_tbl) = {
+static const struct pci_device_id pasemi_mac_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_PASEMI, 0xa005) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_PASEMI, 0xa006) },
 	{ },

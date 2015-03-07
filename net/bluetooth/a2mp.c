@@ -60,10 +60,9 @@ void a2mp_send(struct amp_mgr *mgr, u8 code, u8 ident, u16 len, void *data)
 
 	memset(&msg, 0, sizeof(msg));
 
-	msg.msg_iov = (struct iovec *) &iv;
-	msg.msg_iovlen = 1;
+	iov_iter_kvec(&msg.msg_iter, WRITE | ITER_KVEC, &iv, 1, total_len);
 
-	l2cap_chan_send(chan, &msg, total_len, 0);
+	l2cap_chan_send(chan, &msg, total_len);
 
 	kfree(cmd);
 }
@@ -162,7 +161,7 @@ static int a2mp_discover_req(struct amp_mgr *mgr, struct sk_buff *skb,
 		return -ENOMEM;
 	}
 
-	rsp->mtu = __constant_cpu_to_le16(L2CAP_A2MP_DEFAULT_MTU);
+	rsp->mtu = cpu_to_le16(L2CAP_A2MP_DEFAULT_MTU);
 	rsp->ext_feat = 0;
 
 	__a2mp_add_cl(mgr, rsp->cl);
@@ -235,7 +234,7 @@ static int a2mp_discover_rsp(struct amp_mgr *mgr, struct sk_buff *skb,
 			BT_DBG("chan %p state %s", chan,
 			       state_to_string(chan->state));
 
-			if (chan->chan_type == L2CAP_CHAN_CONN_FIX_A2MP)
+			if (chan->scid == L2CAP_CID_A2MP)
 				continue;
 
 			l2cap_chan_lock(chan);
@@ -649,7 +648,7 @@ static int a2mp_chan_recv_cb(struct l2cap_chan *chan, struct sk_buff *skb)
 	if (err) {
 		struct a2mp_cmd_rej rej;
 
-		rej.reason = __constant_cpu_to_le16(0);
+		rej.reason = cpu_to_le16(0);
 		hdr = (void *) skb->data;
 
 		BT_DBG("Send A2MP Rej: cmd 0x%2.2x err %d", hdr->code, err);
@@ -693,12 +692,19 @@ static void a2mp_chan_state_change_cb(struct l2cap_chan *chan, int state,
 }
 
 static struct sk_buff *a2mp_chan_alloc_skb_cb(struct l2cap_chan *chan,
+					      unsigned long hdr_len,
 					      unsigned long len, int nb)
 {
-	return bt_skb_alloc(len, GFP_KERNEL);
+	struct sk_buff *skb;
+
+	skb = bt_skb_alloc(hdr_len + len, GFP_KERNEL);
+	if (!skb)
+		return ERR_PTR(-ENOMEM);
+
+	return skb;
 }
 
-static struct l2cap_ops a2mp_chan_ops = {
+static const struct l2cap_ops a2mp_chan_ops = {
 	.name = "L2CAP A2MP channel",
 	.recv = a2mp_chan_recv_cb,
 	.close = a2mp_chan_close_cb,
@@ -726,7 +732,11 @@ static struct l2cap_chan *a2mp_chan_open(struct l2cap_conn *conn, bool locked)
 
 	BT_DBG("chan %p", chan);
 
-	chan->chan_type = L2CAP_CHAN_CONN_FIX_A2MP;
+	chan->chan_type = L2CAP_CHAN_FIXED;
+	chan->scid = L2CAP_CID_A2MP;
+	chan->dcid = L2CAP_CID_A2MP;
+	chan->omtu = L2CAP_A2MP_DEFAULT_MTU;
+	chan->imtu = L2CAP_A2MP_DEFAULT_MTU;
 	chan->flush_to = L2CAP_DEFAULT_FLUSH_TO;
 
 	chan->ops = &a2mp_chan_ops;

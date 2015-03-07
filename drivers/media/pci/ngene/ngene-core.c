@@ -57,15 +57,13 @@ DVB_DEFINE_MOD_OPT_ADAPTER_NR(adapter_nr);
 
 #define dprintk	if (debug) printk
 
-#define ngwriteb(dat, adr)         writeb((dat), (char *)(dev->iomem + (adr)))
-#define ngwritel(dat, adr)         writel((dat), (char *)(dev->iomem + (adr)))
-#define ngwriteb(dat, adr)         writeb((dat), (char *)(dev->iomem + (adr)))
+#define ngwriteb(dat, adr)         writeb((dat), dev->iomem + (adr))
+#define ngwritel(dat, adr)         writel((dat), dev->iomem + (adr))
+#define ngwriteb(dat, adr)         writeb((dat), dev->iomem + (adr))
 #define ngreadl(adr)               readl(dev->iomem + (adr))
 #define ngreadb(adr)               readb(dev->iomem + (adr))
-#define ngcpyto(adr, src, count)   memcpy_toio((char *) \
-				   (dev->iomem + (adr)), (src), (count))
-#define ngcpyfrom(dst, adr, count) memcpy_fromio((dst), (char *) \
-				   (dev->iomem + (adr)), (count))
+#define ngcpyto(adr, src, count)   memcpy_toio(dev->iomem + (adr), (src), (count))
+#define ngcpyfrom(dst, adr, count) memcpy_fromio((dst), dev->iomem + (adr), (count))
 
 /****************************************************************************/
 /* nGene interrupt handler **************************************************/
@@ -910,7 +908,6 @@ static int AllocateRingBuffers(struct pci_dev *pci_dev,
 {
 	dma_addr_t tmp;
 	u32 i, j;
-	int status = 0;
 	u32 SCListMemSize = pRingBuffer->NumBuffers
 		* ((Buffer2Length != 0) ? (NUM_SCATTER_GATHER_ENTRIES * 2) :
 		    NUM_SCATTER_GATHER_ENTRIES)
@@ -1010,14 +1007,12 @@ static int AllocateRingBuffers(struct pci_dev *pci_dev,
 
 	}
 
-	return status;
+	return 0;
 }
 
 static int FillTSIdleBuffer(struct SRingBufferDescriptor *pIdleBuffer,
 			    struct SRingBufferDescriptor *pRingBuffer)
 {
-	int status = 0;
-
 	/* Copy pointer to scatter gather list in TSRingbuffer
 	   structure for buffer 2
 	   Load number of buffer
@@ -1038,7 +1033,7 @@ static int FillTSIdleBuffer(struct SRingBufferDescriptor *pIdleBuffer,
 			pIdleBuffer->Head->ngeneBuffer.Number_of_entries_1;
 		Cur = Cur->Next;
 	}
-	return status;
+	return 0;
 }
 
 static u32 RingBufferSizes[MAX_STREAM] = {
@@ -1078,12 +1073,11 @@ static int AllocCommonBuffers(struct ngene *dev)
 	dev->ngenetohost = dev->FWInterfaceBuffer + 256;
 	dev->EventBuffer = dev->FWInterfaceBuffer + 512;
 
-	dev->OverflowBuffer = pci_alloc_consistent(dev->pci_dev,
-						   OVERFLOW_BUFFER_SIZE,
-						   &dev->PAOverflowBuffer);
+	dev->OverflowBuffer = pci_zalloc_consistent(dev->pci_dev,
+						    OVERFLOW_BUFFER_SIZE,
+						    &dev->PAOverflowBuffer);
 	if (!dev->OverflowBuffer)
 		return -ENOMEM;
-	memset(dev->OverflowBuffer, 0, OVERFLOW_BUFFER_SIZE);
 
 	for (i = STREAM_VIDEOIN1; i < MAX_STREAM; i++) {
 		int type = dev->card_info->io_type[i];
@@ -1266,8 +1260,13 @@ static int ngene_load_firm(struct ngene *dev)
 		break;
 	}
 
-	if (request_firmware(&fw, fw_name, &dev->pci_dev->dev))
+	if (request_firmware(&fw, fw_name, &dev->pci_dev->dev) < 0) {
+		printk(KERN_ERR DEVICE_NAME
+			": Could not load firmware file %s.\n", fw_name);
+		printk(KERN_INFO DEVICE_NAME
+			": Copy %s to your hotplug directory!\n", fw_name);
 		return -1;
+	}
 	if (size == 0)
 		size = fw->size;
 	if (size != fw->size) {
@@ -1275,6 +1274,8 @@ static int ngene_load_firm(struct ngene *dev)
 			": Firmware %s has invalid size!", fw_name);
 		err = -1;
 	} else {
+		printk(KERN_INFO DEVICE_NAME
+			": Loading firmware file %s.\n", fw_name);
 		ngene_fw = (u8 *) fw->data;
 		err = ngene_command_load_firmware(dev, ngene_fw, size);
 	}
@@ -1589,7 +1590,7 @@ static void cxd_detach(struct ngene *dev)
 
 	dvb_ca_en50221_release(ci->en);
 	kfree(ci->en);
-	ci->en = 0;
+	ci->en = NULL;
 }
 
 /***********************************/

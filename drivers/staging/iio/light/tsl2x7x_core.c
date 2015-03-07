@@ -352,7 +352,7 @@ static int tsl2x7x_get_lux(struct iio_dev *indio_dev)
 		/* device is not enabled */
 		dev_err(&chip->client->dev, "%s: device is not enabled\n",
 				__func__);
-		ret = -EBUSY ;
+		ret = -EBUSY;
 		goto out_unlock;
 	}
 
@@ -667,9 +667,13 @@ static int tsl2x7x_chip_on(struct iio_dev *indio_dev)
 	chip->tsl2x7x_config[TSL2X7X_PRX_COUNT] =
 			chip->tsl2x7x_settings.prox_pulse_count;
 	chip->tsl2x7x_config[TSL2X7X_PRX_MINTHRESHLO] =
-	chip->tsl2x7x_settings.prox_thres_low;
+			(chip->tsl2x7x_settings.prox_thres_low) & 0xFF;
+	chip->tsl2x7x_config[TSL2X7X_PRX_MINTHRESHHI] =
+			(chip->tsl2x7x_settings.prox_thres_low >> 8) & 0xFF;
 	chip->tsl2x7x_config[TSL2X7X_PRX_MAXTHRESHLO] =
-			chip->tsl2x7x_settings.prox_thres_high;
+			(chip->tsl2x7x_settings.prox_thres_high) & 0xFF;
+	chip->tsl2x7x_config[TSL2X7X_PRX_MAXTHRESHHI] =
+			(chip->tsl2x7x_settings.prox_thres_high >> 8) & 0xFF;
 
 	/* and make sure we're not already on */
 	if (chip->tsl2x7x_chip_status == TSL2X7X_CHIP_WORKING) {
@@ -1036,8 +1040,8 @@ static ssize_t tsl2x7x_als_persistence_show(struct device *dev,
 	y = (TSL2X7X_MAX_TIMER_CNT - (u8)chip->tsl2x7x_settings.als_time) + 1;
 	z = y * TSL2X7X_MIN_ITIME;
 	filter_delay = z * (chip->tsl2x7x_settings.persistence & 0x0F);
-	y = (filter_delay / 1000);
-	z = (filter_delay % 1000);
+	y = filter_delay / 1000;
+	z = filter_delay % 1000;
 
 	return snprintf(buf, PAGE_SIZE, "%d.%03d\n", y, z);
 }
@@ -1082,8 +1086,8 @@ static ssize_t tsl2x7x_prox_persistence_show(struct device *dev,
 	y = (TSL2X7X_MAX_TIMER_CNT - (u8)chip->tsl2x7x_settings.prx_time) + 1;
 	z = y * TSL2X7X_MIN_ITIME;
 	filter_delay = z * ((chip->tsl2x7x_settings.persistence & 0xF0) >> 4);
-	y = (filter_delay / 1000);
-	z = (filter_delay % 1000);
+	y = filter_delay / 1000;
+	z = filter_delay % 1000;
 
 	return snprintf(buf, PAGE_SIZE, "%d.%03d\n", y, z);
 }
@@ -1507,16 +1511,16 @@ static int tsl2x7x_device_id(unsigned char *id, int target)
 	case tsl2571:
 	case tsl2671:
 	case tsl2771:
-		return ((*id & 0xf0) == TRITON_ID);
+		return (*id & 0xf0) == TRITON_ID;
 	case tmd2671:
 	case tmd2771:
-		return ((*id & 0xf0) == HALIBUT_ID);
+		return (*id & 0xf0) == HALIBUT_ID;
 	case tsl2572:
 	case tsl2672:
 	case tmd2672:
 	case tsl2772:
 	case tmd2772:
-		return ((*id & 0xf0) == SWORDFISH_ID);
+		return (*id & 0xf0) == SWORDFISH_ID;
 	}
 
 	return -EINVAL;
@@ -1569,8 +1573,7 @@ static struct attribute *tsl2x7x_ALS_device_attrs[] = {
 	&dev_attr_power_state.attr,
 	&dev_attr_in_illuminance0_calibscale_available.attr,
 	&dev_attr_in_illuminance0_integration_time.attr,
-	&iio_const_attr_in_illuminance0_integration_time_available\
-	.dev_attr.attr,
+	&iio_const_attr_in_illuminance0_integration_time_available.dev_attr.attr,
 	&dev_attr_in_illuminance0_target_input.attr,
 	&dev_attr_in_illuminance0_calibrate.attr,
 	&dev_attr_in_illuminance0_lux_table.attr,
@@ -1587,8 +1590,7 @@ static struct attribute *tsl2x7x_ALSPRX_device_attrs[] = {
 	&dev_attr_power_state.attr,
 	&dev_attr_in_illuminance0_calibscale_available.attr,
 	&dev_attr_in_illuminance0_integration_time.attr,
-	&iio_const_attr_in_illuminance0_integration_time_available\
-	.dev_attr.attr,
+	&iio_const_attr_in_illuminance0_integration_time_available.dev_attr.attr,
 	&dev_attr_in_illuminance0_target_input.attr,
 	&dev_attr_in_illuminance0_calibrate.attr,
 	&dev_attr_in_illuminance0_lux_table.attr,
@@ -1607,8 +1609,7 @@ static struct attribute *tsl2x7x_ALSPRX2_device_attrs[] = {
 	&dev_attr_power_state.attr,
 	&dev_attr_in_illuminance0_calibscale_available.attr,
 	&dev_attr_in_illuminance0_integration_time.attr,
-	&iio_const_attr_in_illuminance0_integration_time_available\
-	.dev_attr.attr,
+	&iio_const_attr_in_illuminance0_integration_time_available.dev_attr.attr,
 	&dev_attr_in_illuminance0_target_input.attr,
 	&dev_attr_in_illuminance0_calibrate.attr,
 	&dev_attr_in_illuminance0_lux_table.attr,
@@ -1672,10 +1673,10 @@ static const struct iio_info tsl2X7X_device_info[] = {
 		.driver_module = THIS_MODULE,
 		.read_raw = &tsl2x7x_read_raw,
 		.write_raw = &tsl2x7x_write_raw,
-		.read_event_value_new = &tsl2x7x_read_thresh,
-		.write_event_value_new = &tsl2x7x_write_thresh,
-		.read_event_config_new = &tsl2x7x_read_interrupt_config,
-		.write_event_config_new = &tsl2x7x_write_interrupt_config,
+		.read_event_value = &tsl2x7x_read_thresh,
+		.write_event_value = &tsl2x7x_write_thresh,
+		.read_event_config = &tsl2x7x_read_interrupt_config,
+		.write_event_config = &tsl2x7x_write_interrupt_config,
 	},
 	[PRX] = {
 		.attrs = &tsl2X7X_device_attr_group_tbl[PRX],
@@ -1683,10 +1684,10 @@ static const struct iio_info tsl2X7X_device_info[] = {
 		.driver_module = THIS_MODULE,
 		.read_raw = &tsl2x7x_read_raw,
 		.write_raw = &tsl2x7x_write_raw,
-		.read_event_value_new = &tsl2x7x_read_thresh,
-		.write_event_value_new = &tsl2x7x_write_thresh,
-		.read_event_config_new = &tsl2x7x_read_interrupt_config,
-		.write_event_config_new = &tsl2x7x_write_interrupt_config,
+		.read_event_value = &tsl2x7x_read_thresh,
+		.write_event_value = &tsl2x7x_write_thresh,
+		.read_event_config = &tsl2x7x_read_interrupt_config,
+		.write_event_config = &tsl2x7x_write_interrupt_config,
 	},
 	[ALSPRX] = {
 		.attrs = &tsl2X7X_device_attr_group_tbl[ALSPRX],
@@ -1694,10 +1695,10 @@ static const struct iio_info tsl2X7X_device_info[] = {
 		.driver_module = THIS_MODULE,
 		.read_raw = &tsl2x7x_read_raw,
 		.write_raw = &tsl2x7x_write_raw,
-		.read_event_value_new = &tsl2x7x_read_thresh,
-		.write_event_value_new = &tsl2x7x_write_thresh,
-		.read_event_config_new = &tsl2x7x_read_interrupt_config,
-		.write_event_config_new = &tsl2x7x_write_interrupt_config,
+		.read_event_value = &tsl2x7x_read_thresh,
+		.write_event_value = &tsl2x7x_write_thresh,
+		.read_event_config = &tsl2x7x_read_interrupt_config,
+		.write_event_config = &tsl2x7x_write_interrupt_config,
 	},
 	[PRX2] = {
 		.attrs = &tsl2X7X_device_attr_group_tbl[PRX2],
@@ -1705,10 +1706,10 @@ static const struct iio_info tsl2X7X_device_info[] = {
 		.driver_module = THIS_MODULE,
 		.read_raw = &tsl2x7x_read_raw,
 		.write_raw = &tsl2x7x_write_raw,
-		.read_event_value_new = &tsl2x7x_read_thresh,
-		.write_event_value_new = &tsl2x7x_write_thresh,
-		.read_event_config_new = &tsl2x7x_read_interrupt_config,
-		.write_event_config_new = &tsl2x7x_write_interrupt_config,
+		.read_event_value = &tsl2x7x_read_thresh,
+		.write_event_value = &tsl2x7x_write_thresh,
+		.read_event_config = &tsl2x7x_read_interrupt_config,
+		.write_event_config = &tsl2x7x_write_interrupt_config,
 	},
 	[ALSPRX2] = {
 		.attrs = &tsl2X7X_device_attr_group_tbl[ALSPRX2],
@@ -1716,10 +1717,10 @@ static const struct iio_info tsl2X7X_device_info[] = {
 		.driver_module = THIS_MODULE,
 		.read_raw = &tsl2x7x_read_raw,
 		.write_raw = &tsl2x7x_write_raw,
-		.read_event_value_new = &tsl2x7x_read_thresh,
-		.write_event_value_new = &tsl2x7x_write_thresh,
-		.read_event_config_new = &tsl2x7x_read_interrupt_config,
-		.write_event_config_new = &tsl2x7x_write_interrupt_config,
+		.read_event_value = &tsl2x7x_read_thresh,
+		.write_event_value = &tsl2x7x_write_thresh,
+		.read_event_config = &tsl2x7x_read_interrupt_config,
+		.write_event_config = &tsl2x7x_write_interrupt_config,
 	},
 };
 
@@ -1960,6 +1961,7 @@ static int tsl2x7x_suspend(struct device *dev)
 
 	if (chip->pdata && chip->pdata->platform_power) {
 		pm_message_t pmm = {PM_EVENT_SUSPEND};
+
 		chip->pdata->platform_power(dev, pmm);
 	}
 
@@ -1974,6 +1976,7 @@ static int tsl2x7x_resume(struct device *dev)
 
 	if (chip->pdata && chip->pdata->platform_power) {
 		pm_message_t pmm = {PM_EVENT_RESUME};
+
 		chip->pdata->platform_power(dev, pmm);
 	}
 

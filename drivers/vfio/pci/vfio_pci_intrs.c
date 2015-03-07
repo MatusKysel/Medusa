@@ -16,6 +16,7 @@
 #include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/eventfd.h>
+#include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/file.h>
 #include <linux/poll.h>
@@ -482,15 +483,19 @@ static int vfio_msi_enable(struct vfio_pci_device *vdev, int nvec, bool msix)
 		for (i = 0; i < nvec; i++)
 			vdev->msix[i].entry = i;
 
-		ret = pci_enable_msix(pdev, vdev->msix, nvec);
-		if (ret) {
+		ret = pci_enable_msix_range(pdev, vdev->msix, 1, nvec);
+		if (ret < nvec) {
+			if (ret > 0)
+				pci_disable_msix(pdev);
 			kfree(vdev->msix);
 			kfree(vdev->ctx);
 			return ret;
 		}
 	} else {
-		ret = pci_enable_msi_block(pdev, nvec);
-		if (ret) {
+		ret = pci_enable_msi_range(pdev, 1, nvec);
+		if (ret < nvec) {
+			if (ret > 0)
+				pci_disable_msi(pdev);
 			kfree(vdev->ctx);
 			return ret;
 		}
@@ -542,6 +547,20 @@ static int vfio_msi_set_vector_signal(struct vfio_pci_device *vdev,
 	if (IS_ERR(trigger)) {
 		kfree(vdev->ctx[vector].name);
 		return PTR_ERR(trigger);
+	}
+
+	/*
+	 * The MSIx vector table resides in device memory which may be cleared
+	 * via backdoor resets. We don't allow direct access to the vector
+	 * table so even if a userspace driver attempts to save/restore around
+	 * such a reset it would be unsuccessful. To avoid this, restore the
+	 * cached value of the message prior to enabling.
+	 */
+	if (msix) {
+		struct msi_msg msg;
+
+		get_cached_msi_msg(irq, &msg);
+		pci_write_msi_msg(irq, &msg);
 	}
 
 	ret = request_irq(irq, vfio_msihandler, 0,
@@ -749,54 +768,37 @@ static int vfio_pci_set_err_trigger(struct vfio_pci_device *vdev,
 				    unsigned count, uint32_t flags, void *data)
 {
 	int32_t fd = *(int32_t *)data;
-	struct pci_dev *pdev = vdev->pdev;
 
 	if ((index != VFIO_PCI_ERR_IRQ_INDEX) ||
 	    !(flags & VFIO_IRQ_SET_DATA_TYPE_MASK))
 		return -EINVAL;
 
-	/*
-	 * device_lock synchronizes setting and checking of
-	 * err_trigger. The vfio_pci_aer_err_detected() is also
-	 * called with device_lock held.
-	 */
-
 	/* DATA_NONE/DATA_BOOL enables loopback testing */
-
 	if (flags & VFIO_IRQ_SET_DATA_NONE) {
-		device_lock(&pdev->dev);
 		if (vdev->err_trigger)
 			eventfd_signal(vdev->err_trigger, 1);
-		device_unlock(&pdev->dev);
 		return 0;
 	} else if (flags & VFIO_IRQ_SET_DATA_BOOL) {
 		uint8_t trigger = *(uint8_t *)data;
-		device_lock(&pdev->dev);
 		if (trigger && vdev->err_trigger)
 			eventfd_signal(vdev->err_trigger, 1);
-		device_unlock(&pdev->dev);
 		return 0;
 	}
 
 	/* Handle SET_DATA_EVENTFD */
-
 	if (fd == -1) {
-		device_lock(&pdev->dev);
 		if (vdev->err_trigger)
 			eventfd_ctx_put(vdev->err_trigger);
 		vdev->err_trigger = NULL;
-		device_unlock(&pdev->dev);
 		return 0;
 	} else if (fd >= 0) {
 		struct eventfd_ctx *efdctx;
 		efdctx = eventfd_ctx_fdget(fd);
 		if (IS_ERR(efdctx))
 			return PTR_ERR(efdctx);
-		device_lock(&pdev->dev);
 		if (vdev->err_trigger)
 			eventfd_ctx_put(vdev->err_trigger);
 		vdev->err_trigger = efdctx;
-		device_unlock(&pdev->dev);
 		return 0;
 	} else
 		return -EINVAL;

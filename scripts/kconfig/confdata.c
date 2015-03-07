@@ -732,14 +732,6 @@ next_menu:
 	return 0;
 }
 
-void conf_write_new_symbol(FILE *fp, struct symbol *sym, bool verbose)
-{
-	if (verbose)
-		conf_write_symbol(fp, sym, &kconfig_printer_cb, NULL);
-	else
-		fprintf(fp, "%s%s\n", CONFIG_, sym->name);
-}
-
 int conf_write(const char *name)
 {
 	FILE *out;
@@ -1172,10 +1164,7 @@ bool conf_set_all_new_symbols(enum conf_def_mode mode)
 	bool has_changed = false;
 
 	for_all_symbols(i, sym) {
-		if (sym_has_value(sym))
-			continue;
-		sym->flags |= SYMBOL_NEW;
-		if (sym->flags & SYMBOL_VALID)
+		if (sym_has_value(sym) || (sym->flags & SYMBOL_VALID))
 			continue;
 		switch (sym_get_type(sym)) {
 		case S_BOOLEAN:
@@ -1189,7 +1178,10 @@ bool conf_set_all_new_symbols(enum conf_def_mode mode)
 				sym->def[S_DEF_USER].tri = mod;
 				break;
 			case def_no:
-				sym->def[S_DEF_USER].tri = no;
+				if (sym->flags & SYMBOL_ALLNOCONFIG_Y)
+					sym->def[S_DEF_USER].tri = yes;
+				else
+					sym->def[S_DEF_USER].tri = no;
 				break;
 			case def_random:
 				sym->def[S_DEF_USER].tri = no;

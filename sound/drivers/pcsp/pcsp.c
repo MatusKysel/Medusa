@@ -21,7 +21,7 @@ MODULE_AUTHOR("Stas Sergeev <stsp@users.sourceforge.net>");
 MODULE_DESCRIPTION("PC-Speaker driver");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("{{PC-Speaker, pcsp}}");
-/*MODULE_ALIAS("platform:pcspkr");*/
+MODULE_ALIAS("platform:pcspkr");
 
 static int index = SNDRV_DEFAULT_IDX1;	/* Index 0-MAX */
 static char *id = SNDRV_DEFAULT_STR1;	/* ID for this card */
@@ -105,7 +105,7 @@ static int snd_card_pcsp_probe(int devnum, struct device *dev)
 	hrtimer_init(&pcsp_chip.timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	pcsp_chip.timer.function = pcsp_do_timer;
 
-	err = snd_card_create(index, id, THIS_MODULE, 0, &card);
+	err = snd_card_new(dev, index, id, THIS_MODULE, 0, &card);
 	if (err < 0)
 		return err;
 
@@ -126,8 +126,6 @@ static int snd_card_pcsp_probe(int devnum, struct device *dev)
 		snd_card_free(card);
 		return err;
 	}
-
-	snd_card_set_dev(pcsp_chip.card, dev);
 
 	strcpy(card->driver, "PC-Speaker");
 	strcpy(card->shortname, "pcsp");
@@ -223,7 +221,6 @@ static void pcsp_shutdown(struct platform_device *dev)
 static struct platform_driver pcsp_platform_driver = {
 	.driver		= {
 		.name	= "pcspkr",
-		.owner	= THIS_MODULE,
 		.pm	= PCSP_PM_OPS,
 	},
 	.probe		= pcsp_probe,

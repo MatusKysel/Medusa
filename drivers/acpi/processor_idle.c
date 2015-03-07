@@ -35,6 +35,7 @@
 #include <linux/clockchips.h>
 #include <linux/cpuidle.h>
 #include <linux/syscore_ops.h>
+#include <acpi/processor.h>
 
 /*
  * Include the apic definitions for x86 to have the APIC timer related defines
@@ -45,9 +46,6 @@
 #ifdef CONFIG_X86
 #include <asm/apic.h>
 #endif
-
-#include <acpi/acpi_bus.h>
-#include <acpi/processor.h>
 
 #define PREFIX "ACPI: "
 
@@ -213,7 +211,7 @@ static int acpi_processor_suspend(void)
 
 static void acpi_processor_resume(void)
 {
-	u32 resumed_bm_rld;
+	u32 resumed_bm_rld = 0;
 
 	acpi_read_bit_register(ACPI_BITREG_BUS_MASTER_RLD, &resumed_bm_rld);
 	if (resumed_bm_rld == saved_bm_rld)
@@ -336,10 +334,10 @@ static int acpi_processor_get_power_info_default(struct acpi_processor *pr)
 
 static int acpi_processor_get_power_info_cst(struct acpi_processor *pr)
 {
-	acpi_status status = 0;
+	acpi_status status;
 	u64 count;
 	int current_count;
-	int i;
+	int i, ret = 0;
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *cst;
 
@@ -360,7 +358,7 @@ static int acpi_processor_get_power_info_cst(struct acpi_processor *pr)
 	/* There must be at least 2 elements */
 	if (!cst || (cst->type != ACPI_TYPE_PACKAGE) || cst->package.count < 2) {
 		printk(KERN_ERR PREFIX "not enough elements in _CST\n");
-		status = -EFAULT;
+		ret = -EFAULT;
 		goto end;
 	}
 
@@ -369,7 +367,7 @@ static int acpi_processor_get_power_info_cst(struct acpi_processor *pr)
 	/* Validate number of power states. */
 	if (count < 1 || count != cst->package.count - 1) {
 		printk(KERN_ERR PREFIX "count given by _CST is not valid\n");
-		status = -EFAULT;
+		ret = -EFAULT;
 		goto end;
 	}
 
@@ -491,12 +489,12 @@ static int acpi_processor_get_power_info_cst(struct acpi_processor *pr)
 
 	/* Validate number of power states discovered */
 	if (current_count < 2)
-		status = -EFAULT;
+		ret = -EFAULT;
 
       end:
 	kfree(buffer.pointer);
 
-	return status;
+	return ret;
 }
 
 static void acpi_processor_power_verify_c3(struct acpi_processor *pr,
@@ -598,7 +596,7 @@ static int acpi_processor_power_verify(struct acpi_processor *pr)
 		case ACPI_STATE_C2:
 			if (!cx->address)
 				break;
-			cx->valid = 1; 
+			cx->valid = 1;
 			break;
 
 		case ACPI_STATE_C3:
@@ -727,11 +725,6 @@ static int acpi_idle_enter_c1(struct cpuidle_device *dev,
 	if (unlikely(!pr))
 		return -EINVAL;
 
-	if (cx->entry_method == ACPI_CSTATE_FFH) {
-		if (current_set_polling_and_test())
-			return -EINVAL;
-	}
-
 	lapic_timer_state_broadcast(pr, cx, 1);
 	acpi_idle_do_entry(cx);
 
@@ -785,10 +778,12 @@ static int acpi_idle_enter_simple(struct cpuidle_device *dev,
 	if (unlikely(!pr))
 		return -EINVAL;
 
-	if (cx->entry_method == ACPI_CSTATE_FFH) {
-		if (current_set_polling_and_test())
-			return -EINVAL;
-	}
+#ifdef CONFIG_HOTPLUG_CPU
+	if ((cx->type != ACPI_STATE_C1) && (num_online_cpus() > 1) &&
+	    !pr->flags.has_cst &&
+	    !(acpi_gbl_FADT.flags & ACPI_FADT_C2_MP_SUPPORTED))
+		return acpi_idle_enter_c1(dev, drv, CPUIDLE_DRIVER_STATE_START);
+#endif
 
 	/*
 	 * Must be done before busmaster disable as we might need to
@@ -831,6 +826,13 @@ static int acpi_idle_enter_bm(struct cpuidle_device *dev,
 	if (unlikely(!pr))
 		return -EINVAL;
 
+#ifdef CONFIG_HOTPLUG_CPU
+	if ((cx->type != ACPI_STATE_C1) && (num_online_cpus() > 1) &&
+	    !pr->flags.has_cst &&
+	    !(acpi_gbl_FADT.flags & ACPI_FADT_C2_MP_SUPPORTED))
+		return acpi_idle_enter_c1(dev, drv, CPUIDLE_DRIVER_STATE_START);
+#endif
+
 	if (!cx->bm_sts_skip && acpi_idle_bm_check()) {
 		if (drv->safe_state_index >= 0) {
 			return drv->states[drv->safe_state_index].enter(dev,
@@ -839,11 +841,6 @@ static int acpi_idle_enter_bm(struct cpuidle_device *dev,
 			acpi_safe_halt();
 			return -EBUSY;
 		}
-	}
-
-	if (cx->entry_method == ACPI_CSTATE_FFH) {
-		if (current_set_polling_and_test())
-			return -EINVAL;
 	}
 
 	acpi_unlazy_tlb(smp_processor_id());
@@ -932,20 +929,12 @@ static int acpi_processor_setup_cpuidle_cx(struct acpi_processor *pr,
 		if (!cx->valid)
 			continue;
 
-#ifdef CONFIG_HOTPLUG_CPU
-		if ((cx->type != ACPI_STATE_C1) && (num_online_cpus() > 1) &&
-		    !pr->flags.has_cst &&
-		    !(acpi_gbl_FADT.flags & ACPI_FADT_C2_MP_SUPPORTED))
-			continue;
-#endif
 		per_cpu(acpi_cstate[count], dev->cpu) = cx;
 
 		count++;
 		if (count == CPUIDLE_STATE_MAX)
 			break;
 	}
-
-	dev->state_count = count;
 
 	if (!count)
 		return -EINVAL;
@@ -987,13 +976,6 @@ static int acpi_processor_setup_cpuidle_states(struct acpi_processor *pr)
 		if (!cx->valid)
 			continue;
 
-#ifdef CONFIG_HOTPLUG_CPU
-		if ((cx->type != ACPI_STATE_C1) && (num_online_cpus() > 1) &&
-		    !pr->flags.has_cst &&
-		    !(acpi_gbl_FADT.flags & ACPI_FADT_C2_MP_SUPPORTED))
-			continue;
-#endif
-
 		state = &drv->states[count];
 		snprintf(state->name, CPUIDLE_NAME_LEN, "C%d", i);
 		strncpy(state->desc, cx->desc, CPUIDLE_DESC_LEN);
@@ -1003,8 +985,6 @@ static int acpi_processor_setup_cpuidle_states(struct acpi_processor *pr)
 		state->flags = 0;
 		switch (cx->type) {
 			case ACPI_STATE_C1:
-			if (cx->entry_method == ACPI_CSTATE_FFH)
-				state->flags |= CPUIDLE_FLAG_TIME_VALID;
 
 			state->enter = acpi_idle_enter_c1;
 			state->enter_dead = acpi_idle_play_dead;
@@ -1012,14 +992,12 @@ static int acpi_processor_setup_cpuidle_states(struct acpi_processor *pr)
 			break;
 
 			case ACPI_STATE_C2:
-			state->flags |= CPUIDLE_FLAG_TIME_VALID;
 			state->enter = acpi_idle_enter_simple;
 			state->enter_dead = acpi_idle_play_dead;
 			drv->safe_state_index = count;
 			break;
 
 			case ACPI_STATE_C3:
-			state->flags |= CPUIDLE_FLAG_TIME_VALID;
 			state->enter = pr->flags.bm_check ?
 					acpi_idle_enter_bm :
 					acpi_idle_enter_simple;
@@ -1089,9 +1067,9 @@ int acpi_processor_cst_has_changed(struct acpi_processor *pr)
 
 	if (pr->id == 0 && cpuidle_get_driver() == &acpi_idle_driver) {
 
-		cpuidle_pause_and_lock();
 		/* Protect against cpu-hotplug */
 		get_online_cpus();
+		cpuidle_pause_and_lock();
 
 		/* Disable all cpuidle devices */
 		for_each_online_cpu(cpu) {
@@ -1118,8 +1096,8 @@ int acpi_processor_cst_has_changed(struct acpi_processor *pr)
 				cpuidle_enable_device(dev);
 			}
 		}
-		put_online_cpus();
 		cpuidle_resume_and_unlock();
+		put_online_cpus();
 	}
 
 	return 0;
@@ -1129,7 +1107,7 @@ static int acpi_processor_registered;
 
 int acpi_processor_power_init(struct acpi_processor *pr)
 {
-	acpi_status status = 0;
+	acpi_status status;
 	int retval;
 	struct cpuidle_device *dev;
 	static int first_run;

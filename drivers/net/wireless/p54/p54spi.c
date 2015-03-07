@@ -170,8 +170,10 @@ static int p54spi_request_firmware(struct ieee80211_hw *dev)
 	/* FIXME: should driver use it's own struct device? */
 	ret = request_firmware(&priv->firmware, "3826.arm", &priv->spi->dev);
 
-	if (ret)
+	if (ret < 0) {
+		dev_err(&priv->spi->dev, "request_firmware() failed: %d", ret);
 		return ret;
+	}
 
 	ret = p54_parse_firmware(dev, priv->firmware);
 	if (ret) {
@@ -191,7 +193,7 @@ static int p54spi_request_eeprom(struct ieee80211_hw *dev)
 	/* allow users to customize their eeprom.
 	 */
 
-	ret = request_firmware(&eeprom, "3826.eeprom", &priv->spi->dev);
+	ret = request_firmware_direct(&eeprom, "3826.eeprom", &priv->spi->dev);
 	if (ret < 0) {
 #ifdef CONFIG_P54_SPI_DEFAULT_EEPROM
 		dev_info(&priv->spi->dev, "loading default eeprom...\n");

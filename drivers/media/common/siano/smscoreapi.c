@@ -1164,8 +1164,10 @@ static int smscore_load_firmware_from_file(struct smscore_device_t *coredev,
 		return -EINVAL;
 
 	rc = request_firmware(&fw, fw_filename, coredev->device);
-	if (rc)
+	if (rc < 0) {
+		sms_err("failed to open firmware file \"%s\"", fw_filename);
 		return rc;
+	}
 	sms_info("read fw %s, buffer size=0x%zx", fw_filename, fw->size);
 	fw_buf = kmalloc(ALIGN(fw->size, SMS_ALLOC_ALIGNMENT),
 			 GFP_KERNEL | GFP_DMA);
@@ -2127,8 +2129,6 @@ int smscore_gpio_get_level(struct smscore_device_t *coredev, u8 pin_num,
 
 static int __init smscore_module_init(void)
 {
-	int rc = 0;
-
 	INIT_LIST_HEAD(&g_smscore_notifyees);
 	INIT_LIST_HEAD(&g_smscore_devices);
 	kmutex_init(&g_smscore_deviceslock);
@@ -2136,7 +2136,7 @@ static int __init smscore_module_init(void)
 	INIT_LIST_HEAD(&g_smscore_registry);
 	kmutex_init(&g_smscore_registrylock);
 
-	return rc;
+	return 0;
 }
 
 static void __exit smscore_module_exit(void)

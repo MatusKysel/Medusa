@@ -144,10 +144,10 @@ void show_registers(struct pt_regs *regs)
 	char *mode;
 
 	mode = user_mode(regs) ? "User" : "Krnl";
-	printk("%s PSW : %p %p (%pSR)\n",
-	       mode, (void *) regs->psw.mask,
-	       (void *) regs->psw.addr,
-	       (void *) regs->psw.addr);
+	printk("%s PSW : %p %p", mode, (void *)regs->psw.mask, (void *)regs->psw.addr);
+	if (!user_mode(regs))
+		printk(" (%pSR)", (void *)regs->psw.addr);
+	printk("\n");
 	printk("           R:%x T:%x IO:%x EX:%x Key:%x M:%x W:%x "
 	       "P:%x AS:%x CC:%x PM:%x", mask_bits(regs, PSW_MASK_PER),
 	       mask_bits(regs, PSW_MASK_DAT), mask_bits(regs, PSW_MASK_IO),
@@ -191,7 +191,8 @@ void die(struct pt_regs *regs, const char *str)
 	console_verbose();
 	spin_lock_irq(&die_lock);
 	bust_spinlocks(1);
-	printk("%s: %04x [#%d] ", str, regs->int_code & 0xffff, ++die_counter);
+	printk("%s: %04x ilc:%d [#%d] ", str, regs->int_code & 0xffff,
+	       regs->int_code >> 17, ++die_counter);
 #ifdef CONFIG_PREEMPT
 	printk("PREEMPT ");
 #endif

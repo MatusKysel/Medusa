@@ -265,9 +265,9 @@ static void wusbhc_devconnect_acked_work(struct work_struct *work)
  * Addresses: because WUSB hosts have no downstream hubs, we can do a
  *            1:1 mapping between 'port number' and device
  *            address. This simplifies many things, as during this
- *            initial connect phase the USB stack has no knoledge of
+ *            initial connect phase the USB stack has no knowledge of
  *            the device and hasn't assigned an address yet--we know
- *            USB's choose_address() will use the same euristics we
+ *            USB's choose_address() will use the same heuristics we
  *            use here, so we can assume which address will be assigned.
  *
  *            USB stack always assigns address 1 to the root hub, so
@@ -284,7 +284,7 @@ void wusbhc_devconnect_ack(struct wusbhc *wusbhc, struct wusb_dn_connect *dnc,
 	struct device *dev = wusbhc->dev;
 	struct wusb_dev *wusb_dev;
 	struct wusb_port *port;
-	unsigned idx, devnum;
+	unsigned idx;
 
 	mutex_lock(&wusbhc->mutex);
 
@@ -312,8 +312,6 @@ void wusbhc_devconnect_ack(struct wusbhc *wusbhc, struct wusb_dn_connect *dnc,
 		goto error_unlock;
 	}
 
-	devnum = idx + 2;
-
 	/* Make sure we are using no crypto on that "virtual port" */
 	wusbhc->set_ptk(wusbhc, idx, 0, NULL, 0);
 
@@ -331,7 +329,7 @@ void wusbhc_devconnect_ack(struct wusbhc *wusbhc, struct wusb_dn_connect *dnc,
 	port->wusb_dev = wusb_dev;
 	port->status |= USB_PORT_STAT_CONNECTION;
 	port->change |= USB_PORT_STAT_C_CONNECTION;
-	/* Now the port status changed to connected; khubd will
+	/* Now the port status changed to connected; hub_wq will
 	 * pick the change up and try to reset the port to bring it to
 	 * the enabled state--so this process returns up to the stack
 	 * and it calls back into wusbhc_rh_port_reset().
@@ -345,7 +343,7 @@ error_unlock:
 /*
  * Disconnect a Wireless USB device from its fake port
  *
- * Marks the port as disconnected so that khubd can pick up the change
+ * Marks the port as disconnected so that hub_wq can pick up the change
  * and drops our knowledge about the device.
  *
  * Assumes there is a device connected
@@ -381,7 +379,7 @@ static void __wusbhc_dev_disconnect(struct wusbhc *wusbhc,
 		wusbhc_gtk_rekey(wusbhc);
 
 	/* The Wireless USB part has forgotten about the device already; now
-	 * khubd's timer will pick up the disconnection and remove the USB
+	 * hub_wq's timer will pick up the disconnection and remove the USB
 	 * device from the system
 	 */
 }

@@ -24,7 +24,7 @@
 #define YAMA_SCOPE_CAPABILITY	2
 #define YAMA_SCOPE_NO_ATTACH	3
 
-static int ptrace_scope = YAMA_SCOPE_DISABLED;
+static int ptrace_scope = YAMA_SCOPE_RELATIONAL;
 
 /* describe a ptrace relationship for potential exception */
 struct ptrace_relation {
@@ -425,7 +425,7 @@ static __init int yama_init(void)
 		return 0;
 #endif
 
-	printk(KERN_INFO "Yama: disabled by default; enable with sysctl kernel.yama.*\n");
+	printk(KERN_INFO "Yama: becoming mindful.\n");
 
 #ifndef CONFIG_SECURITY_YAMA_STACKED
 	if (register_security(&yama_ops))

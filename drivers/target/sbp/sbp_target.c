@@ -210,7 +210,7 @@ static struct sbp_session *sbp_session_create(
 		return ERR_PTR(-ENOMEM);
 	}
 
-	sess->se_sess = transport_init_session();
+	sess->se_sess = transport_init_session(TARGET_PROT_NORMAL);
 	if (IS_ERR(sess->se_sess)) {
 		pr_err("failed to init se_session\n");
 
@@ -1237,7 +1237,7 @@ static void sbp_handle_command(struct sbp_target_request *req)
 
 	if (target_submit_cmd(&req->se_cmd, sess->se_sess, req->cmd_buf,
 			      req->sense_buf, unpacked_lun, data_length,
-			      MSG_SIMPLE_TAG, data_dir, 0))
+			      TCM_SIMPLE_TAG, data_dir, 0))
 		goto err;
 
 	return;
@@ -1844,6 +1844,11 @@ static int sbp_queue_status(struct se_cmd *se_cmd)
 
 static void sbp_queue_tm_rsp(struct se_cmd *se_cmd)
 {
+}
+
+static void sbp_aborted_task(struct se_cmd *se_cmd)
+{
+	return;
 }
 
 static int sbp_check_stop_free(struct se_cmd *se_cmd)
@@ -2526,6 +2531,7 @@ static struct target_core_fabric_ops sbp_ops = {
 	.queue_data_in			= sbp_queue_data_in,
 	.queue_status			= sbp_queue_status,
 	.queue_tm_rsp			= sbp_queue_tm_rsp,
+	.aborted_task			= sbp_aborted_task,
 	.check_stop_free		= sbp_check_stop_free,
 
 	.fabric_make_wwn		= sbp_make_tport,

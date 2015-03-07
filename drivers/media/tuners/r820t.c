@@ -1,7 +1,7 @@
 /*
  * Rafael Micro R820T driver
  *
- * Copyright (C) 2013 Mauro Carvalho Chehab <mchehab@redhat.com>
+ * Copyright (C) 2013 Mauro Carvalho Chehab
  *
  * This driver was written from scratch, based on an existing driver
  * that it is part of rtl-sdr git tree, released under GPLv2:
@@ -959,6 +959,18 @@ static int r820t_set_tv_standard(struct r820t_priv *priv,
 		lt_att = 0x00;		/* r31[7], lt att enable */
 		flt_ext_widest = 0x00;	/* r15[7]: flt_ext_wide off */
 		polyfil_cur = 0x60;	/* r25[6:5]:min */
+	} else if (delsys == SYS_DVBC_ANNEX_A) {
+		if_khz = 5070;
+		filt_cal_lo = 73500;
+		filt_gain = 0x10;	/* +3db, 6mhz on */
+		img_r = 0x00;		/* image negative */
+		filt_q = 0x10;		/* r10[4]:low q(1'b1) */
+		hp_cor = 0x0b;		/* 1.7m disable, +0cap, 1.0mhz */
+		ext_enable = 0x40;	/* r30[6]=1 ext enable; r30[5]:1 ext at lna max-1 */
+		loop_through = 0x00;	/* r5[7], lt on */
+		lt_att = 0x00;		/* r31[7], lt att enable */
+		flt_ext_widest = 0x00;	/* r15[7]: flt_ext_wide off */
+		polyfil_cur = 0x60;	/* r25[6:5]:min */
 	} else {
 		if (bw <= 6) {
 			if_khz = 3570;
@@ -1468,7 +1480,8 @@ static int r820t_imr_prepare(struct r820t_priv *priv)
 static int r820t_multi_read(struct r820t_priv *priv)
 {
 	int rc, i;
-	u8 data[2], min = 0, max = 255, sum = 0;
+	u16 sum = 0;
+	u8 data[2], min = 255, max = 0;
 
 	usleep_range(5000, 6000);
 
@@ -1544,7 +1557,7 @@ static int r820t_imr_cross(struct r820t_priv *priv,
 		cross[i].value = rc;
 
 		if (cross[i].value < tmp.value)
-			memcpy(&tmp, &cross[i], sizeof(tmp));
+			tmp = cross[i];
 	}
 
 	if ((tmp.phase_y & 0x1f) == 1) {	/* y-direction */
@@ -2299,7 +2312,6 @@ struct dvb_frontend *r820t_attach(struct dvb_frontend *fe,
 	case 0:
 		/* memory allocation failure */
 		goto err_no_gate;
-		break;
 	case 1:
 		/* new tuner instance */
 		priv->cfg = cfg;
@@ -2351,5 +2363,5 @@ err_no_gate:
 EXPORT_SYMBOL_GPL(r820t_attach);
 
 MODULE_DESCRIPTION("Rafael Micro r820t silicon tuner driver");
-MODULE_AUTHOR("Mauro Carvalho Chehab <mchehab@redhat.com>");
+MODULE_AUTHOR("Mauro Carvalho Chehab");
 MODULE_LICENSE("GPL");

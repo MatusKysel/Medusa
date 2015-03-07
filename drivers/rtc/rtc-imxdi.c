@@ -401,7 +401,9 @@ static int __init dryice_rtc_probe(struct platform_device *pdev)
 	imxdi->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(imxdi->clk))
 		return PTR_ERR(imxdi->clk);
-	clk_prepare_enable(imxdi->clk);
+	rc = clk_prepare_enable(imxdi->clk);
+	if (rc)
+		return rc;
 
 	/*
 	 * Initialize dryice hardware
@@ -497,7 +499,6 @@ MODULE_DEVICE_TABLE(of, dryice_dt_ids);
 static struct platform_driver dryice_rtc_driver = {
 	.driver = {
 		   .name = "imxdi_rtc",
-		   .owner = THIS_MODULE,
 		   .of_match_table = of_match_ptr(dryice_dt_ids),
 		   },
 	.remove = __exit_p(dryice_rtc_remove),

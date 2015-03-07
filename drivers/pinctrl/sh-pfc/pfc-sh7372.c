@@ -844,7 +844,7 @@ static const u16 pinmux_data[] = {
 #define SH7372_PIN_O(pin)		SH_PFC_PIN_CFG(pin, __O)
 #define SH7372_PIN_O_PU_PD(pin)		SH_PFC_PIN_CFG(pin, __O | __PUD)
 
-static struct sh_pfc_pin pinmux_pins[] = {
+static const struct sh_pfc_pin pinmux_pins[] = {
 	/* Table 57-1 (I/O and Pull U/D) */
 	SH7372_PIN_IO_PD(0),		SH7372_PIN_IO_PD(1),
 	SH7372_PIN_O(2),		SH7372_PIN_I_PD(3),
@@ -2118,17 +2118,6 @@ static const struct sh_pfc_function pinmux_functions[] = {
 	SH_PFC_FUNCTION(usb1),
 };
 
-#undef PORTCR
-#define PORTCR(nr, reg)							\
-	{								\
-		PINMUX_CFG_REG("PORT" nr "CR", reg, 8, 4) {		\
-			_PCRH(PORT##nr##_IN, 0, 0, PORT##nr##_OUT),     \
-				PORT##nr##_FN0, PORT##nr##_FN1,		\
-				PORT##nr##_FN2, PORT##nr##_FN3,		\
-				PORT##nr##_FN4, PORT##nr##_FN5,		\
-				PORT##nr##_FN6, PORT##nr##_FN7 }	\
-	}
-
 static const struct pinmux_cfg_reg pinmux_config_regs[] = {
 	PORTCR(0,	0xE6051000), /* PORT0CR */
 	PORTCR(1,	0xE6051001), /* PORT1CR */
@@ -2585,7 +2574,7 @@ static void __iomem *sh7372_pinmux_portcr(struct sh_pfc *pfc, unsigned int pin)
 			&sh7372_portcr_offsets[i];
 
 		if (pin <= group->end_pin)
-			return pfc->window->virt + group->offset + pin;
+			return pfc->windows->virt + group->offset + pin;
 	}
 
 	return NULL;
@@ -2625,14 +2614,14 @@ static void sh7372_pinmux_set_bias(struct sh_pfc *pfc, unsigned int pin,
 	iowrite8(value, addr);
 }
 
-static const struct sh_pfc_soc_operations sh7372_pinmux_ops = {
+static const struct sh_pfc_soc_operations sh7372_pfc_ops = {
 	.get_bias = sh7372_pinmux_get_bias,
 	.set_bias = sh7372_pinmux_set_bias,
 };
 
 const struct sh_pfc_soc_info sh7372_pinmux_info = {
 	.name = "sh7372_pfc",
-	.ops = &sh7372_pinmux_ops,
+	.ops = &sh7372_pfc_ops,
 
 	.input = { PINMUX_INPUT_BEGIN, PINMUX_INPUT_END },
 	.output = { PINMUX_OUTPUT_BEGIN, PINMUX_OUTPUT_END },

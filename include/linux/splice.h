@@ -24,7 +24,8 @@
  * Passed to the actors
  */
 struct splice_desc {
-	unsigned int len, total_len;	/* current and remaining length */
+	size_t total_len;		/* remaining length */
+	unsigned int len;		/* current length */
 	unsigned int flags;		/* splice flags */
 	/*
 	 * actor() private data
@@ -69,16 +70,6 @@ extern ssize_t splice_from_pipe(struct pipe_inode_info *, struct file *,
 				splice_actor *);
 extern ssize_t __splice_from_pipe(struct pipe_inode_info *,
 				  struct splice_desc *, splice_actor *);
-extern int splice_from_pipe_feed(struct pipe_inode_info *, struct splice_desc *,
-				 splice_actor *);
-extern int splice_from_pipe_next(struct pipe_inode_info *,
-				 struct splice_desc *);
-extern void splice_from_pipe_begin(struct splice_desc *);
-extern void splice_from_pipe_end(struct pipe_inode_info *,
-				 struct splice_desc *);
-extern int pipe_to_file(struct pipe_inode_info *, struct pipe_buffer *,
-			struct splice_desc *);
-
 extern ssize_t splice_to_pipe(struct pipe_inode_info *,
 			      struct splice_pipe_desc *);
 extern ssize_t splice_direct_to_actor(struct file *, struct splice_desc *,
@@ -92,10 +83,4 @@ extern void splice_shrink_spd(struct splice_pipe_desc *);
 extern void spd_release_page(struct splice_pipe_desc *, unsigned int);
 
 extern const struct pipe_buf_operations page_cache_pipe_buf_ops;
-
-extern long do_splice_from(struct pipe_inode_info *pipe, struct file *out,
-			   loff_t *ppos, size_t len, unsigned int flags);
-extern long do_splice_to(struct file *in, loff_t *ppos,
-			 struct pipe_inode_info *pipe, size_t len,
-			 unsigned int flags);
 #endif
