@@ -51,9 +51,12 @@ struct vfsmount * medusa_evocate_mnt(struct dentry *dentry)
 	/* get the local root */
 	//spin_lock(&dcache_lock);
 	spin_lock(&dentry->d_lock);
-	rcu_read_lock();
-	while (!IS_ROOT(dentry))
+	while (!IS_ROOT(dentry)) {
+		struct dentry *old = dentry;
 		dentry = dentry->d_parent;
+		spin_lock(&dentry->d_lock);
+		spin_unlock(&old->d_lock);
+	}
 	dget(dentry);
 	spin_unlock(&dentry->d_lock);
 	//spin_unlock(&dcache_lock);

@@ -208,13 +208,13 @@ static void medusa_l1_inode_free_security(struct inode *inode)
 {
         struct medusa_l1_inode_s *med;
 
+	spin_lock(&inode->i_lock);
 	if (inode->i_security != NULL) {
-		rcu_read_lock();
 		med = inode->i_security;
 		inode->i_security = NULL;
-		rcu_read_unlock();
 		kfree(med);
 	}
+	spin_unlock(&inode->i_lock);
 }
 
 static int medusa_l1_inode_init_security(struct inode *inode, struct inode *dir,
