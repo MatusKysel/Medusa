@@ -564,6 +564,9 @@ static int user_open(struct inode *inode, struct file *file)
 
 	evtypes_to_register = NULL;
 	kclasses_to_register = NULL;
+
+    init_completion(&userspace_answer);
+
 	MED_REGISTER_AUTHSERVER(chardev_medusa);
 	return 0; /* success */
 out:
