@@ -50,7 +50,7 @@ struct medusa_attribute_s {
 		(attrname), \
 		(type), \
 		/*(uintptr_t)(&(((struct structname *)0)->structmember)), */\
-		(Mptr_t)(&(((struct structname *)0)->structmember)), \
+		(long unsigned int)&(((struct structname *)0)->structmember), \
 		sizeof (((struct structname *)0)->structmember) \
 	}
 #define MED_ATTR_END {"", MED_END, 0, 0}
@@ -222,7 +222,7 @@ struct medusa_evtype_s {
 	struct medusa_evtype_s (MED_EVTYPEOF(structname)) = { 		\
 		MEDUSA_DEFAULT_ACCTYPE_HEADER,				\
 		(evtypename),						\
-		{ (MCPptr_t)&MED_KCLASSOF(s1name), (MCPptr_t)&MED_KCLASSOF(s2name) },	\
+		{ { (void*)&MED_KCLASSOF(s1name) }, { (void*)&MED_KCLASSOF(s2name) } },	\
 		{ (arg1name), (arg2name) },				\
 		sizeof(struct structname),				\
 		MED_ATTRSOF(structname)					\

@@ -12,8 +12,11 @@
  * facts about them.
  */
 
-typedef uint64_t MCPptr_t; // medusa common protocol pointer type this is here because we wanna have one protocol for all architectures JK March 2015
-typedef uint64_t Mptr_t; // medusa pointer if you want to run effectivly medusa you should use something like coid* :) for debuggin purposes you should use mcptr_t :) JK March 2015
+union MCPptr_u {
+    void* ptr;
+    uint64_t data;
+};
+typedef union MCPptr_u MCPptr_t; // medusa common protocol pointer type this is here because we wanna have one protocol for all architectures JK March 2015
 
 #pragma pack(push,1)
 
