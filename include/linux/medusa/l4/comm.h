@@ -15,6 +15,8 @@
 typedef uint64_t MCPptr_t; // medusa common protocol pointer type this is here because we wanna have one protocol for all architectures JK March 2015
 typedef uint64_t Mptr_t; // medusa pointer if you want to run effectivly medusa you should use something like coid* :) for debuggin purposes you should use mcptr_t :) JK March 2015
 
+#pragma pack(push,1)
+
 /* version of this communication protocol */
 #define MEDUSA_COMM_VERSION	1
 
@@ -75,5 +77,6 @@ struct medusa_comm_evtype_s {
 	char		name[MEDUSA_COMM_EVNAME_MAX];
 	char		ev_name[2][MEDUSA_COMM_ATTRNAME_MAX];
 };
+#pragma pack(pop)
 
 #endif

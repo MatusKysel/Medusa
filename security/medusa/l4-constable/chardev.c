@@ -306,7 +306,7 @@ feed_lions:
 
 
         /* question_ready */
-#define decision_evtype (decision_event->evtype_id)
+#define decision_evtype ((struct medusa_evtype_s*)decision_event->evtype_id)
 	tele_mem[0].opcode = tp_PUTPtr;
 	tele_mem[0].args.putPtr.what = (MCPptr_t)decision_evtype; // possibility to encryption JK march 2015
 	tele_mem[1].opcode = tp_PUT32;
@@ -317,7 +317,7 @@ feed_lions:
 	tele_mem[3].opcode = tp_CUTNPASTE;
 	tele_mem[3].args.cutnpaste.from = (unsigned char *)decision_o1;
 	tele_mem[3].args.cutnpaste.count =
-		decision_evtype->arg_kclass[0]->kobject_size;
+		((struct medusa_kclass_s*)decision_evtype->arg_kclass[0])->kobject_size;
 	if (decision_o1 == decision_o2) {
 		tele_mem[4].opcode = tp_HALT;
 	} else {
@@ -325,7 +325,7 @@ feed_lions:
 		tele_mem[4].args.cutnpaste.from =
 			(unsigned char *)decision_o2;
 		tele_mem[4].args.cutnpaste.count =
-			decision_evtype->arg_kclass[1]->kobject_size;
+			((struct medusa_kclass_s*)decision_evtype->arg_kclass[1])->kobject_size;
 		tele_mem[5].opcode = tp_HALT;
 	}
 #undef decision_evtype

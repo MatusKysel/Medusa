@@ -22,16 +22,16 @@ medusa_answer_t med_decide(struct medusa_evtype_s * evtype, void * event, void *
 #endif
 	authserver = med_get_authserver();
 	if (!authserver) {
-		if (evtype->arg_kclass[0]->unmonitor)
-			evtype->arg_kclass[0]->unmonitor((struct medusa_kobject_s *) o1);
-		if (evtype->arg_kclass[1]->unmonitor)
-			evtype->arg_kclass[1]->unmonitor((struct medusa_kobject_s *) o2);
+		if (((struct medusa_kclass_s*)evtype->arg_kclass[0])->unmonitor)
+			((struct medusa_kclass_s*)evtype->arg_kclass[0])->unmonitor((struct medusa_kobject_s *) o1);
+		if (((struct medusa_kclass_s*)evtype->arg_kclass[1])->unmonitor)
+			((struct medusa_kclass_s*)evtype->arg_kclass[1])->unmonitor((struct medusa_kobject_s *) o2);
 		MED_UNLOCK_W(registry_lock);
 		return MED_OK;
 	}
 	MED_UNLOCK_W(registry_lock);
 
-	((struct medusa_event_s *)event)->evtype_id = evtype;
+	((struct medusa_event_s *)event)->evtype_id = (MCPptr_t)evtype;
 	((struct medusa_kobject_s *)o1)->kclass_id = evtype->arg_kclass[0];
 	((struct medusa_kobject_s *)o2)->kclass_id = evtype->arg_kclass[1];
 	retval = authserver->decide(event, o1, o2);

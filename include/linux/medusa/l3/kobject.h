@@ -123,7 +123,8 @@ struct medusa_kclass_s {
 
 /* this is the kobject header - use it at the beginning of l2 structures */
 #define MEDUSA_KOBJECT_HEADER \
-	struct medusa_kclass_s * kclass_id	/* kclass - type of kobject */
+    MCPptr_t kclass_id
+	//struct medusa_kclass_s * kclass_id	/* kclass - type of kobject */
 	
 /* used by l3 and l4 to easily access the header of l2 structures */
 struct medusa_kobject_s {
@@ -196,7 +197,8 @@ struct medusa_evtype_s {
 
 	/* l2-defined data */
 	char name[MEDUSA_EVNAME_MAX];		/* string: event name */
-	struct medusa_kclass_s * arg_kclass[2];	/* kclasses of arguments */
+	//struct medusa_kclass_s * arg_kclass[2];	/* kclasses of arguments */
+	MCPptr_t arg_kclass[2];	/* kclasses of arguments */
 	char arg_name[2][MEDUSA_ATTRNAME_MAX];	/* names of arguments */
 	unsigned int event_size;		/* sizeof(event) */
 	struct medusa_attribute_s * attr;	/* attributes */
@@ -220,7 +222,7 @@ struct medusa_evtype_s {
 	struct medusa_evtype_s (MED_EVTYPEOF(structname)) = { 		\
 		MEDUSA_DEFAULT_ACCTYPE_HEADER,				\
 		(evtypename),						\
-		{ &MED_KCLASSOF(s1name), &MED_KCLASSOF(s2name) },	\
+		{ (MCPptr_t)&MED_KCLASSOF(s1name), (MCPptr_t)&MED_KCLASSOF(s2name) },	\
 		{ (arg1name), (arg2name) },				\
 		sizeof(struct structname),				\
 		MED_ATTRSOF(structname)					\
@@ -230,7 +232,8 @@ struct medusa_evtype_s {
 
 /* this is the access header - use it at the beginning of l2 structures */
 #define MEDUSA_ACCESS_HEADER \
-	struct medusa_evtype_s * evtype_id
+	MCPptr_t evtype_id
+	//struct medusa_evtype_s * evtype_id
 /* used by l3 and l4 to easily access the header of l2 structures */
 struct medusa_event_s {
 	MEDUSA_ACCESS_HEADER;

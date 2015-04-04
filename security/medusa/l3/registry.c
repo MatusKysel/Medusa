@@ -253,8 +253,8 @@ int med_register_evtype(struct medusa_evtype_s * ptr, int flags)
 	ptr->arg_name[1][MEDUSA_ATTRNAME_MAX-1] = '\0';
 	/* TODO: check whether kclasses are registered, maybe register automagically */
 	MED_PRINTF("Registering event type %s(%s:%s->%s:%s)\n", ptr->name,
-		ptr->arg_name[0],ptr->arg_kclass[0]->name,
-		ptr->arg_name[1],ptr->arg_kclass[1]->name
+		ptr->arg_name[0],((struct medusa_kclass_s*)ptr->arg_kclass[0])->name,
+		ptr->arg_name[1],((struct medusa_kclass_s*)ptr->arg_kclass[1])->name
 	);
 	MED_LOCK_W(registry_lock);
 	for (p=evtypes; p; p=p->next)
