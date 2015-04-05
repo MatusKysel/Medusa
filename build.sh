@@ -1,5 +1,7 @@
 #!/bin/bash
 
+CONFIG_FILE="config.`uname -m`"
+
 if [[ "$1" == '-h' || "$1" == '--help' ]]; then
 	echo "$0 [--help] [--delete] [--clean] [--nogrub] [--noreboot]";
 	exit 0
@@ -41,6 +43,11 @@ sudo rm vmlinux 2> /dev/null
 
 sudo rm -rf ../linux-image-*.deb
 
+if [ -f .config ]; then
+    diff .config $CONFIG_FILE
+else
+    cp $CONFIG_FILE .config
+fi
 PROCESSORS=`cat /proc/cpuinfo | grep processor | wc -l`
 export CONCURRENCY_LEVEL=`expr $PROCESSORS + 1`
 #export CLEAN_SOURCE=no
