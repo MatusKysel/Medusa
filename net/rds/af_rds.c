@@ -83,7 +83,7 @@ static int rds_release(struct socket *sock)
 
 	/*
 	 * the binding lookup hash uses rcu, we need to
-	 * make sure we sychronize_rcu before we free our
+	 * make sure we synchronize_rcu before we free our
 	 * entry
 	 */
 	rds_remove_bound(rs);
@@ -596,4 +596,4 @@ MODULE_DESCRIPTION("RDS: Reliable Datagram Sockets"
 		   " v" DRV_VERSION " (" DRV_RELDATE ")");
 MODULE_VERSION(DRV_VERSION);
 MODULE_LICENSE("Dual BSD/GPL");
-/* MODULE_ALIAS_NETPROTO(PF_RDS); */
+MODULE_ALIAS_NETPROTO(PF_RDS);

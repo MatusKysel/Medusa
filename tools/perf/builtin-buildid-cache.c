@@ -63,11 +63,35 @@ static int build_id_cache__kcore_dir(char *dir, size_t sz)
 	return 0;
 }
 
+static bool same_kallsyms_reloc(const char *from_dir, char *to_dir)
+{
+	char from[PATH_MAX];
+	char to[PATH_MAX];
+	const char *name;
+	u64 addr1 = 0, addr2 = 0;
+	int i;
+
+	scnprintf(from, sizeof(from), "%s/kallsyms", from_dir);
+	scnprintf(to, sizeof(to), "%s/kallsyms", to_dir);
+
+	for (i = 0; (name = ref_reloc_sym_names[i]) != NULL; i++) {
+		addr1 = kallsyms__get_function_start(from, name);
+		if (addr1)
+			break;
+	}
+
+	if (name)
+		addr2 = kallsyms__get_function_start(to, name);
+
+	return addr1 == addr2;
+}
+
 static int build_id_cache__kcore_existing(const char *from_dir, char *to_dir,
 					  size_t to_dir_sz)
 {
 	char from[PATH_MAX];
 	char to[PATH_MAX];
+	char to_subdir[PATH_MAX];
 	struct dirent *dent;
 	int ret = -1;
 	DIR *d;
@@ -86,10 +110,11 @@ static int build_id_cache__kcore_existing(const char *from_dir, char *to_dir,
 			continue;
 		scnprintf(to, sizeof(to), "%s/%s/modules", to_dir,
 			  dent->d_name);
-		if (!compare_proc_modules(from, to)) {
-			scnprintf(to, sizeof(to), "%s/%s", to_dir,
-				  dent->d_name);
-			strlcpy(to_dir, to, to_dir_sz);
+		scnprintf(to_subdir, sizeof(to_subdir), "%s/%s",
+			  to_dir, dent->d_name);
+		if (!compare_proc_modules(from, to) &&
+		    same_kallsyms_reloc(from_dir, to_subdir)) {
+			strlcpy(to_dir, to_subdir, to_dir_sz);
 			ret = 0;
 			break;
 		}
@@ -100,7 +125,8 @@ static int build_id_cache__kcore_existing(const char *from_dir, char *to_dir,
 	return ret;
 }
 
-static int build_id_cache__add_kcore(const char *filename, const char *debugdir)
+static int build_id_cache__add_kcore(const char *filename, const char *debugdir,
+				     bool force)
 {
 	char dir[32], sbuildid[BUILD_ID_SIZE * 2 + 1];
 	char from_dir[PATH_MAX], to_dir[PATH_MAX];
@@ -119,7 +145,8 @@ static int build_id_cache__add_kcore(const char *filename, const char *debugdir)
 	scnprintf(to_dir, sizeof(to_dir), "%s/[kernel.kcore]/%s",
 		  debugdir, sbuildid);
 
-	if (!build_id_cache__kcore_existing(from_dir, to_dir, sizeof(to_dir))) {
+	if (!force &&
+	    !build_id_cache__kcore_existing(from_dir, to_dir, sizeof(to_dir))) {
 		pr_debug("same kcore found in %s\n", to_dir);
 		return 0;
 	}
@@ -219,20 +246,9 @@ static bool dso__missing_buildid_cache(struct dso *dso, int parm __maybe_unused)
 	return true;
 }
 
-static int build_id_cache__fprintf_missing(const char *filename, bool force, FILE *fp)
+static int build_id_cache__fprintf_missing(struct perf_session *session, FILE *fp)
 {
-	struct perf_data_file file = {
-		.path  = filename,
-		.mode  = PERF_DATA_MODE_READ,
-		.force = force,
-	};
-	struct perf_session *session = perf_session__new(&file, false, NULL);
-	if (session == NULL)
-		return -1;
-
 	perf_session__fprintf_dsos_buildid(session, fp, dso__missing_buildid_cache, 0);
-	perf_session__delete(session);
-
 	return 0;
 }
 
@@ -269,12 +285,17 @@ int cmd_buildid_cache(int argc, const char **argv,
 	struct str_node *pos;
 	int ret = 0;
 	bool force = false;
-	char debugdir[PATH_MAX];
 	char const *add_name_list_str = NULL,
 		   *remove_name_list_str = NULL,
 		   *missing_filename = NULL,
 		   *update_name_list_str = NULL,
-		   *kcore_filename;
+		   *kcore_filename = NULL;
+	char sbuf[STRERR_BUFSIZE];
+
+	struct perf_data_file file = {
+		.mode  = PERF_DATA_MODE_READ,
+	};
+	struct perf_session *session = NULL;
 
 	const struct option buildid_cache_options[] = {
 	OPT_STRING('a', "add", &add_name_list_str,
@@ -299,25 +320,32 @@ int cmd_buildid_cache(int argc, const char **argv,
 	argc = parse_options(argc, argv, buildid_cache_options,
 			     buildid_cache_usage, 0);
 
-	if (symbol__init() < 0)
-		return -1;
+	if (missing_filename) {
+		file.path = missing_filename;
+		file.force = force;
+
+		session = perf_session__new(&file, false, NULL);
+		if (session == NULL)
+			return -1;
+	}
+
+	if (symbol__init(session ? &session->header.env : NULL) < 0)
+		goto out;
 
 	setup_pager();
-
-	snprintf(debugdir, sizeof(debugdir), "%s", buildid_dir);
 
 	if (add_name_list_str) {
 		list = strlist__new(true, add_name_list_str);
 		if (list) {
 			strlist__for_each(pos, list)
-				if (build_id_cache__add_file(pos->s, debugdir)) {
+				if (build_id_cache__add_file(pos->s, buildid_dir)) {
 					if (errno == EEXIST) {
 						pr_debug("%s already in the cache\n",
 							 pos->s);
 						continue;
 					}
 					pr_warning("Couldn't add %s: %s\n",
-						   pos->s, strerror(errno));
+						   pos->s, strerror_r(errno, sbuf, sizeof(sbuf)));
 				}
 
 			strlist__delete(list);
@@ -328,14 +356,14 @@ int cmd_buildid_cache(int argc, const char **argv,
 		list = strlist__new(true, remove_name_list_str);
 		if (list) {
 			strlist__for_each(pos, list)
-				if (build_id_cache__remove_file(pos->s, debugdir)) {
+				if (build_id_cache__remove_file(pos->s, buildid_dir)) {
 					if (errno == ENOENT) {
 						pr_debug("%s wasn't in the cache\n",
 							 pos->s);
 						continue;
 					}
 					pr_warning("Couldn't remove %s: %s\n",
-						   pos->s, strerror(errno));
+						   pos->s, strerror_r(errno, sbuf, sizeof(sbuf)));
 				}
 
 			strlist__delete(list);
@@ -343,20 +371,20 @@ int cmd_buildid_cache(int argc, const char **argv,
 	}
 
 	if (missing_filename)
-		ret = build_id_cache__fprintf_missing(missing_filename, force, stdout);
+		ret = build_id_cache__fprintf_missing(session, stdout);
 
 	if (update_name_list_str) {
 		list = strlist__new(true, update_name_list_str);
 		if (list) {
 			strlist__for_each(pos, list)
-				if (build_id_cache__update_file(pos->s, debugdir)) {
+				if (build_id_cache__update_file(pos->s, buildid_dir)) {
 					if (errno == ENOENT) {
 						pr_debug("%s wasn't in the cache\n",
 							 pos->s);
 						continue;
 					}
 					pr_warning("Couldn't update %s: %s\n",
-						   pos->s, strerror(errno));
+						   pos->s, strerror_r(errno, sbuf, sizeof(sbuf)));
 				}
 
 			strlist__delete(list);
@@ -364,8 +392,12 @@ int cmd_buildid_cache(int argc, const char **argv,
 	}
 
 	if (kcore_filename &&
-	    build_id_cache__add_kcore(kcore_filename, debugdir))
+	    build_id_cache__add_kcore(kcore_filename, buildid_dir, force))
 		pr_warning("Couldn't add %s\n", kcore_filename);
+
+out:
+	if (session)
+		perf_session__delete(session);
 
 	return ret;
 }

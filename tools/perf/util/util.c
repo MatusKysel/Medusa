@@ -1,16 +1,33 @@
 #include "../perf.h"
 #include "util.h"
+#include "debug.h"
+#include <api/fs/fs.h>
 #include <sys/mman.h>
 #ifdef HAVE_BACKTRACE_SUPPORT
 #include <execinfo.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+#include <byteswap.h>
+#include <linux/kernel.h>
+#include <unistd.h>
+#include "callchain.h"
+
+struct callchain_param	callchain_param = {
+	.mode	= CHAIN_GRAPH_REL,
+	.min_percent = 0.5,
+	.order  = ORDER_CALLEE,
+	.key	= CCKEY_FUNCTION
+};
 
 /*
  * XXX We need to find a better place for these things...
  */
 unsigned int page_size;
+int cacheline_size;
 
 bool test_attr__enabled;
 
@@ -151,21 +168,42 @@ unsigned long convert_unit(unsigned long value, char *unit)
 	return value;
 }
 
-int readn(int fd, void *buf, size_t n)
+static ssize_t ion(bool is_read, int fd, void *buf, size_t n)
 {
 	void *buf_start = buf;
+	size_t left = n;
 
-	while (n) {
-		int ret = read(fd, buf, n);
+	while (left) {
+		ssize_t ret = is_read ? read(fd, buf, left) :
+					write(fd, buf, left);
 
+		if (ret < 0 && errno == EINTR)
+			continue;
 		if (ret <= 0)
 			return ret;
 
-		n -= ret;
-		buf += ret;
+		left -= ret;
+		buf  += ret;
 	}
 
-	return buf - buf_start;
+	BUG_ON((size_t)(buf - buf_start) != n);
+	return n;
+}
+
+/*
+ * Read exactly 'n' bytes or return an error.
+ */
+ssize_t readn(int fd, void *buf, size_t n)
+{
+	return ion(true, fd, buf, n);
+}
+
+/*
+ * Write exactly 'n' bytes or return an error.
+ */
+ssize_t writen(int fd, void *buf, size_t n)
+{
+	return ion(false, fd, buf, n);
 }
 
 size_t hex_width(u64 v)
@@ -253,6 +291,18 @@ void get_term_dimensions(struct winsize *ws)
 	ws->ws_col = 80;
 }
 
+void set_term_quiet_input(struct termios *old)
+{
+	struct termios tc;
+
+	tcgetattr(0, old);
+	tc = *old;
+	tc.c_lflag &= ~(ICANON | ECHO);
+	tc.c_cc[VMIN] = 0;
+	tc.c_cc[VTIME] = 0;
+	tcsetattr(0, TCSANOW, &tc);
+}
+
 static void set_tracing_events_path(const char *mountpoint)
 {
 	snprintf(tracing_events_path, sizeof(tracing_events_path), "%s/%s",
@@ -305,11 +355,8 @@ const char *find_tracing_dir(void)
 	if (!debugfs)
 		return NULL;
 
-	tracing = malloc(strlen(debugfs) + 9);
-	if (!tracing)
+	if (asprintf(&tracing, "%s/tracing", debugfs) < 0)
 		return NULL;
-
-	sprintf(tracing, "%s/tracing", debugfs);
 
 	tracing_found = 1;
 	return tracing;
@@ -324,11 +371,9 @@ char *get_tracing_file(const char *name)
 	if (!tracing)
 		return NULL;
 
-	file = malloc(strlen(tracing) + strlen(name) + 2);
-	if (!file)
+	if (asprintf(&file, "%s/%s", tracing, name) < 0)
 		return NULL;
 
-	sprintf(file, "%s/%s", tracing, name);
 	return file;
 }
 
@@ -397,19 +442,131 @@ unsigned long parse_tag_value(const char *str, struct parse_tag *tags)
 	return (unsigned long) -1;
 }
 
-int filename__read_int(const char *filename, int *value)
+int filename__read_str(const char *filename, char **buf, size_t *sizep)
 {
-	char line[64];
-	int fd = open(filename, O_RDONLY), err = -1;
+	size_t size = 0, alloc_size = 0;
+	void *bf = NULL, *nbf;
+	int fd, n, err = 0;
+	char sbuf[STRERR_BUFSIZE];
 
+	fd = open(filename, O_RDONLY);
 	if (fd < 0)
-		return -1;
+		return -errno;
 
-	if (read(fd, line, sizeof(line)) > 0) {
-		*value = atoi(line);
-		err = 0;
-	}
+	do {
+		if (size == alloc_size) {
+			alloc_size += BUFSIZ;
+			nbf = realloc(bf, alloc_size);
+			if (!nbf) {
+				err = -ENOMEM;
+				break;
+			}
+
+			bf = nbf;
+		}
+
+		n = read(fd, bf + size, alloc_size - size);
+		if (n < 0) {
+			if (size) {
+				pr_warning("read failed %d: %s\n", errno,
+					 strerror_r(errno, sbuf, sizeof(sbuf)));
+				err = 0;
+			} else
+				err = -errno;
+
+			break;
+		}
+
+		size += n;
+	} while (n > 0);
+
+	if (!err) {
+		*sizep = size;
+		*buf   = bf;
+	} else
+		free(bf);
 
 	close(fd);
 	return err;
+}
+
+const char *get_filename_for_perf_kvm(void)
+{
+	const char *filename;
+
+	if (perf_host && !perf_guest)
+		filename = strdup("perf.data.host");
+	else if (!perf_host && perf_guest)
+		filename = strdup("perf.data.guest");
+	else
+		filename = strdup("perf.data.kvm");
+
+	return filename;
+}
+
+int perf_event_paranoid(void)
+{
+	int value;
+
+	if (sysctl__read_int("kernel/perf_event_paranoid", &value))
+		return INT_MAX;
+
+	return value;
+}
+
+void mem_bswap_32(void *src, int byte_size)
+{
+	u32 *m = src;
+	while (byte_size > 0) {
+		*m = bswap_32(*m);
+		byte_size -= sizeof(u32);
+		++m;
+	}
+}
+
+void mem_bswap_64(void *src, int byte_size)
+{
+	u64 *m = src;
+
+	while (byte_size > 0) {
+		*m = bswap_64(*m);
+		byte_size -= sizeof(u64);
+		++m;
+	}
+}
+
+bool find_process(const char *name)
+{
+	size_t len = strlen(name);
+	DIR *dir;
+	struct dirent *d;
+	int ret = -1;
+
+	dir = opendir(procfs__mountpoint());
+	if (!dir)
+		return -1;
+
+	/* Walk through the directory. */
+	while (ret && (d = readdir(dir)) != NULL) {
+		char path[PATH_MAX];
+		char *data;
+		size_t size;
+
+		if ((d->d_type != DT_DIR) ||
+		     !strcmp(".", d->d_name) ||
+		     !strcmp("..", d->d_name))
+			continue;
+
+		scnprintf(path, sizeof(path), "%s/%s/comm",
+			  procfs__mountpoint(), d->d_name);
+
+		if (filename__read_str(path, &data, &size))
+			continue;
+
+		ret = strncmp(name, data, len);
+		free(data);
+	}
+
+	closedir(dir);
+	return ret ? false : true;
 }

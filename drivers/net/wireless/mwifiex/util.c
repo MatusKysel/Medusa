@@ -1,7 +1,7 @@
 /*
  * Marvell Wireless LAN device driver: utility functions
  *
- * Copyright (C) 2011, Marvell International Ltd.
+ * Copyright (C) 2011-2014, Marvell International Ltd.
  *
  * This software file (the "File") is distributed by Marvell International
  * Ltd. under the terms of the GNU General Public License Version 2, June 1991
@@ -72,7 +72,7 @@ int mwifiex_init_shutdown_fw(struct mwifiex_private *priv,
 		return -1;
 	}
 
-	return mwifiex_send_cmd_sync(priv, cmd, HostCmd_ACT_GEN_SET, 0, NULL);
+	return mwifiex_send_cmd(priv, cmd, HostCmd_ACT_GEN_SET, 0, NULL, true);
 }
 EXPORT_SYMBOL_GPL(mwifiex_init_shutdown_fw);
 
@@ -104,6 +104,7 @@ int mwifiex_get_debug_info(struct mwifiex_private *priv,
 		info->pm_wakeup_fw_try = adapter->pm_wakeup_fw_try;
 		info->is_hs_configured = adapter->is_hs_configured;
 		info->hs_activated = adapter->hs_activated;
+		info->is_cmd_timedout = adapter->is_cmd_timedout;
 		info->num_cmd_host_to_card_failure
 				= adapter->dbg.num_cmd_host_to_card_failure;
 		info->num_cmd_sleep_cfm_host_to_card_failure
@@ -119,7 +120,6 @@ int mwifiex_get_debug_info(struct mwifiex_private *priv,
 		info->num_cmd_assoc_failure =
 					adapter->dbg.num_cmd_assoc_failure;
 		info->num_tx_timeout = adapter->dbg.num_tx_timeout;
-		info->num_cmd_timeout = adapter->dbg.num_cmd_timeout;
 		info->timeout_cmd_id = adapter->dbg.timeout_cmd_id;
 		info->timeout_cmd_act = adapter->dbg.timeout_cmd_act;
 		memcpy(info->last_cmd_id, adapter->dbg.last_cmd_id,
@@ -141,6 +141,38 @@ int mwifiex_get_debug_info(struct mwifiex_private *priv,
 	return 0;
 }
 
+static int
+mwifiex_parse_mgmt_packet(struct mwifiex_private *priv, u8 *payload, u16 len,
+			  struct rxpd *rx_pd)
+{
+	u16 stype;
+	u8 category, action_code;
+	struct ieee80211_hdr *ieee_hdr = (void *)payload;
+
+	stype = (le16_to_cpu(ieee_hdr->frame_control) & IEEE80211_FCTL_STYPE);
+
+	switch (stype) {
+	case IEEE80211_STYPE_ACTION:
+		category = *(payload + sizeof(struct ieee80211_hdr));
+		action_code = *(payload + sizeof(struct ieee80211_hdr) + 1);
+		if (category == WLAN_CATEGORY_PUBLIC &&
+		    action_code == WLAN_PUB_ACTION_TDLS_DISCOVER_RES) {
+			dev_dbg(priv->adapter->dev,
+				"TDLS discovery response %pM nf=%d, snr=%d\n",
+				ieee_hdr->addr2, rx_pd->nf, rx_pd->snr);
+			mwifiex_auto_tdls_update_peer_signal(priv,
+							     ieee_hdr->addr2,
+							     rx_pd->snr,
+							     rx_pd->nf);
+		}
+		break;
+	default:
+		dev_dbg(priv->adapter->dev,
+			"unknown mgmt frame subytpe %#x\n", stype);
+	}
+
+	return 0;
+}
 /*
  * This function processes the received management packet and send it
  * to the kernel.
@@ -151,6 +183,7 @@ mwifiex_process_mgmt_packet(struct mwifiex_private *priv,
 {
 	struct rxpd *rx_pd;
 	u16 pkt_len;
+	struct ieee80211_hdr *ieee_hdr;
 
 	if (!skb)
 		return -1;
@@ -162,6 +195,11 @@ mwifiex_process_mgmt_packet(struct mwifiex_private *priv,
 
 	pkt_len = le16_to_cpu(rx_pd->rx_pkt_length);
 
+	ieee_hdr = (void *)skb->data;
+	if (ieee80211_is_mgmt(ieee_hdr->frame_control)) {
+		mwifiex_parse_mgmt_packet(priv, (u8 *)ieee_hdr,
+					  pkt_len, rx_pd);
+	}
 	/* Remove address4 */
 	memmove(skb->data + sizeof(struct ieee80211_hdr_3addr),
 		skb->data + sizeof(struct ieee80211_hdr),
@@ -172,7 +210,7 @@ mwifiex_process_mgmt_packet(struct mwifiex_private *priv,
 
 	cfg80211_rx_mgmt(priv->wdev, priv->roc_cfg.chan.center_freq,
 			 CAL_RSSI(rx_pd->snr, rx_pd->nf), skb->data, pkt_len,
-			 0, GFP_ATOMIC);
+			 0);
 
 	return 0;
 }
@@ -190,6 +228,9 @@ int mwifiex_recv_packet(struct mwifiex_private *priv, struct sk_buff *skb)
 {
 	if (!skb)
 		return -1;
+
+	priv->stats.rx_bytes += skb->len;
+	priv->stats.rx_packets++;
 
 	skb->dev = priv->netdev;
 	skb->protocol = eth_type_trans(skb, priv->netdev);
@@ -217,8 +258,6 @@ int mwifiex_recv_packet(struct mwifiex_private *priv, struct sk_buff *skb)
 	    (skb->truesize > MWIFIEX_RX_DATA_BUF_SIZE))
 		skb->truesize += (skb->len - MWIFIEX_RX_DATA_BUF_SIZE);
 
-	priv->stats.rx_bytes += skb->len;
-	priv->stats.rx_packets++;
 	if (in_interrupt())
 		netif_rx(skb);
 	else
@@ -250,4 +289,118 @@ int mwifiex_complete_cmd(struct mwifiex_adapter *adapter,
 		wake_up_interruptible(&adapter->cmd_wait_q.wait);
 
 	return 0;
+}
+
+/* This function will return the pointer to station entry in station list
+ * table which matches specified mac address.
+ * This function should be called after acquiring RA list spinlock.
+ * NULL is returned if station entry is not found in associated STA list.
+ */
+struct mwifiex_sta_node *
+mwifiex_get_sta_entry(struct mwifiex_private *priv, const u8 *mac)
+{
+	struct mwifiex_sta_node *node;
+
+	if (!mac)
+		return NULL;
+
+	list_for_each_entry(node, &priv->sta_list, list) {
+		if (!memcmp(node->mac_addr, mac, ETH_ALEN))
+			return node;
+	}
+
+	return NULL;
+}
+
+/* This function will add a sta_node entry to associated station list
+ * table with the given mac address.
+ * If entry exist already, existing entry is returned.
+ * If received mac address is NULL, NULL is returned.
+ */
+struct mwifiex_sta_node *
+mwifiex_add_sta_entry(struct mwifiex_private *priv, const u8 *mac)
+{
+	struct mwifiex_sta_node *node;
+	unsigned long flags;
+
+	if (!mac)
+		return NULL;
+
+	spin_lock_irqsave(&priv->sta_list_spinlock, flags);
+	node = mwifiex_get_sta_entry(priv, mac);
+	if (node)
+		goto done;
+
+	node = kzalloc(sizeof(*node), GFP_ATOMIC);
+	if (!node)
+		goto done;
+
+	memcpy(node->mac_addr, mac, ETH_ALEN);
+	list_add_tail(&node->list, &priv->sta_list);
+
+done:
+	spin_unlock_irqrestore(&priv->sta_list_spinlock, flags);
+	return node;
+}
+
+/* This function will search for HT IE in association request IEs
+ * and set station HT parameters accordingly.
+ */
+void
+mwifiex_set_sta_ht_cap(struct mwifiex_private *priv, const u8 *ies,
+		       int ies_len, struct mwifiex_sta_node *node)
+{
+	const struct ieee80211_ht_cap *ht_cap;
+
+	if (!ies)
+		return;
+
+	ht_cap = (void *)cfg80211_find_ie(WLAN_EID_HT_CAPABILITY, ies, ies_len);
+	if (ht_cap) {
+		node->is_11n_enabled = 1;
+		node->max_amsdu = le16_to_cpu(ht_cap->cap_info) &
+				  IEEE80211_HT_CAP_MAX_AMSDU ?
+				  MWIFIEX_TX_DATA_BUF_SIZE_8K :
+				  MWIFIEX_TX_DATA_BUF_SIZE_4K;
+	} else {
+		node->is_11n_enabled = 0;
+	}
+
+	return;
+}
+
+/* This function will delete a station entry from station list */
+void mwifiex_del_sta_entry(struct mwifiex_private *priv, const u8 *mac)
+{
+	struct mwifiex_sta_node *node;
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->sta_list_spinlock, flags);
+
+	node = mwifiex_get_sta_entry(priv, mac);
+	if (node) {
+		list_del(&node->list);
+		kfree(node);
+	}
+
+	spin_unlock_irqrestore(&priv->sta_list_spinlock, flags);
+	return;
+}
+
+/* This function will delete all stations from associated station list. */
+void mwifiex_del_all_sta_list(struct mwifiex_private *priv)
+{
+	struct mwifiex_sta_node *node, *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->sta_list_spinlock, flags);
+
+	list_for_each_entry_safe(node, tmp, &priv->sta_list, list) {
+		list_del(&node->list);
+		kfree(node);
+	}
+
+	INIT_LIST_HEAD(&priv->sta_list);
+	spin_unlock_irqrestore(&priv->sta_list_spinlock, flags);
+	return;
 }

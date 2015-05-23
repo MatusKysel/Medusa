@@ -295,21 +295,29 @@ static ssize_t ashmem_read(struct file *file, char __user *buf,
 
 	/* If size is not set, or set to 0, always return EOF. */
 	if (asma->size == 0)
-		goto out;
+		goto out_unlock;
 
 	if (!asma->file) {
 		ret = -EBADF;
-		goto out;
+		goto out_unlock;
 	}
 
+	mutex_unlock(&ashmem_mutex);
+
+	/*
+	 * asma and asma->file are used outside the lock here.  We assume
+	 * once asma->file is set it will never be changed, and will not
+	 * be destroyed until all references to the file are dropped and
+	 * ashmem_release is called.
+	 */
 	ret = asma->file->f_op->read(asma->file, buf, len, pos);
-	if (ret < 0)
-		goto out;
+	if (ret >= 0) {
+		/** Update backing file pos, since f_ops->read() doesn't */
+		asma->file->f_pos = *pos;
+	}
+	return ret;
 
-	/** Update backing file pos, since f_ops->read() doesn't */
-	asma->file->f_pos = *pos;
-
-out:
+out_unlock:
 	mutex_unlock(&ashmem_mutex);
 	return ret;
 }
@@ -331,7 +339,7 @@ static loff_t ashmem_llseek(struct file *file, loff_t offset, int origin)
 		goto out;
 	}
 
-	ret = asma->file->f_op->llseek(asma->file, offset, origin);
+	ret = vfs_llseek(asma->file, offset, origin);
 	if (ret < 0)
 		goto out;
 
@@ -410,7 +418,7 @@ out:
 }
 
 /*
- * ashmem_shrink - our cache shrinker, called from mm/vmscan.c :: shrink_slab
+ * ashmem_shrink - our cache shrinker, called from mm/vmscan.c
  *
  * 'nr_to_scan' is the number of objects to scan for freeing.
  *
@@ -438,7 +446,7 @@ ashmem_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		loff_t start = range->pgstart * PAGE_SIZE;
 		loff_t end = (range->pgend + 1) * PAGE_SIZE;
 
-		do_fallocate(range->asma->file,
+		vfs_fallocate(range->asma->file,
 				FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 				start, end - start);
 		range->purged = ASHMEM_WAS_PURGED;
@@ -498,6 +506,7 @@ out:
 
 static int set_name(struct ashmem_area *asma, void __user *name)
 {
+	int len;
 	int ret = 0;
 	char local_name[ASHMEM_NAME_LEN];
 
@@ -510,21 +519,19 @@ static int set_name(struct ashmem_area *asma, void __user *name)
 	 * variable that does not need protection and later copy the local
 	 * variable to the structure member with lock held.
 	 */
-	if (copy_from_user(local_name, name, ASHMEM_NAME_LEN))
-		return -EFAULT;
-
+	len = strncpy_from_user(local_name, name, ASHMEM_NAME_LEN);
+	if (len < 0)
+		return len;
+	if (len == ASHMEM_NAME_LEN)
+		local_name[ASHMEM_NAME_LEN - 1] = '\0';
 	mutex_lock(&ashmem_mutex);
 	/* cannot change an existing mapping's name */
-	if (unlikely(asma->file)) {
+	if (unlikely(asma->file))
 		ret = -EINVAL;
-		goto out;
-	}
-	memcpy(asma->name + ASHMEM_NAME_PREFIX_LEN,
-		local_name, ASHMEM_NAME_LEN);
-	asma->name[ASHMEM_FULL_NAME_LEN-1] = '\0';
-out:
-	mutex_unlock(&ashmem_mutex);
+	else
+		strcpy(asma->name + ASHMEM_NAME_PREFIX_LEN, local_name);
 
+	mutex_unlock(&ashmem_mutex);
 	return ret;
 }
 
@@ -778,7 +785,6 @@ static long ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				.nr_to_scan = LONG_MAX,
 			};
 			ret = ashmem_shrink_count(&ashmem_shrinker, &sc);
-			nodes_setall(sc.nodes_to_scan);
 			ashmem_shrink_scan(&ashmem_shrinker, &sc);
 		}
 		break;

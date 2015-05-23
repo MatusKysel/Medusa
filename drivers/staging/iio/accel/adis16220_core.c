@@ -70,7 +70,7 @@ static int adis16220_capture(struct iio_dev *indio_dev)
 	if (ret)
 		dev_err(&indio_dev->dev, "problem beginning capture");
 
-	msleep(10); /* delay for capture to finish */
+	usleep_range(10000, 11000); /* delay for capture to finish */
 
 	return ret;
 }
@@ -323,15 +323,14 @@ static int adis16220_read_raw(struct iio_dev *indio_dev,
 		sval = (s16)(sval << (16 - bits)) >> (16 - bits);
 		*val = sval;
 		return IIO_VAL_INT;
-	} else {
-		ret = adis_read_reg_16(&st->adis, addr->addr, &uval);
-		if (ret)
-			return ret;
-		bits = addr->bits;
-		uval &= (1 << bits) - 1;
-		*val = uval;
-		return IIO_VAL_INT;
 	}
+	ret = adis_read_reg_16(&st->adis, addr->addr, &uval);
+	if (ret)
+		return ret;
+	bits = addr->bits;
+	uval &= (1 << bits) - 1;
+	*val = uval;
+	return IIO_VAL_INT;
 }
 
 static const struct iio_chan_spec adis16220_channels[] = {
@@ -439,13 +438,13 @@ static int adis16220_probe(struct spi_device *spi)
 	indio_dev->channels = adis16220_channels;
 	indio_dev->num_channels = ARRAY_SIZE(adis16220_channels);
 
-	ret = iio_device_register(indio_dev);
+	ret = devm_iio_device_register(&spi->dev, indio_dev);
 	if (ret)
 		return ret;
 
 	ret = sysfs_create_bin_file(&indio_dev->dev.kobj, &accel_bin);
 	if (ret)
-		goto error_unregister_dev;
+		return ret;
 
 	ret = sysfs_create_bin_file(&indio_dev->dev.kobj, &adc1_bin);
 	if (ret)
@@ -470,8 +469,6 @@ error_rm_adc1_bin:
 	sysfs_remove_bin_file(&indio_dev->dev.kobj, &adc1_bin);
 error_rm_accel_bin:
 	sysfs_remove_bin_file(&indio_dev->dev.kobj, &accel_bin);
-error_unregister_dev:
-	iio_device_unregister(indio_dev);
 	return ret;
 }
 
@@ -482,7 +479,6 @@ static int adis16220_remove(struct spi_device *spi)
 	sysfs_remove_bin_file(&indio_dev->dev.kobj, &adc2_bin);
 	sysfs_remove_bin_file(&indio_dev->dev.kobj, &adc1_bin);
 	sysfs_remove_bin_file(&indio_dev->dev.kobj, &accel_bin);
-	iio_device_unregister(indio_dev);
 
 	return 0;
 }

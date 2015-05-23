@@ -12,6 +12,8 @@
 #ifndef _EXYNOS_DRM_GEM_H_
 #define _EXYNOS_DRM_GEM_H_
 
+#include <drm/drm_gem.h>
+
 #define to_exynos_gem_obj(x)	container_of(x,\
 			struct exynos_drm_gem_obj, base)
 
@@ -60,7 +62,7 @@ struct exynos_drm_gem_buf {
  * @vma: a pointer to vm_area.
  * @flags: indicate memory type to allocated buffer and cache attruibute.
  *
- * P.S. this object would be transfered to user as kms_bo.handle so
+ * P.S. this object would be transferred to user as kms_bo.handle so
  *	user can access the buffer through kms_bo.handle.
  */
 struct exynos_drm_gem_obj {
@@ -110,17 +112,6 @@ dma_addr_t *exynos_drm_gem_get_dma_addr(struct drm_device *dev,
 void exynos_drm_gem_put_dma_addr(struct drm_device *dev,
 					unsigned int gem_handle,
 					struct drm_file *filp);
-
-/* get buffer offset to map to user space. */
-int exynos_drm_gem_map_offset_ioctl(struct drm_device *dev, void *data,
-				    struct drm_file *file_priv);
-
-/*
- * mmap the physically continuous memory that a gem object contains
- * to user space.
- */
-int exynos_drm_gem_mmap_ioctl(struct drm_device *dev, void *data,
-			      struct drm_file *file_priv);
 
 /* map user space allocated by malloc to pages. */
 int exynos_drm_gem_userptr_ioctl(struct drm_device *dev, void *data,

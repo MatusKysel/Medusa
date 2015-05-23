@@ -30,7 +30,6 @@
 #include <linux/utsname.h>
 #include <linux/tracehook.h>
 #include <linux/rcupdate.h>
-#include <generated/package.h>
 
 #include <asm/cpu.h>
 #include <asm/delay.h>
@@ -104,9 +103,9 @@ show_regs (struct pt_regs *regs)
 	print_modules();
 	printk("\n");
 	show_regs_print_info(KERN_DEFAULT);
-	printk("psr : %016lx ifs : %016lx ip  : [<%016lx>]    %s (%s%s)\n",
+	printk("psr : %016lx ifs : %016lx ip  : [<%016lx>]    %s (%s)\n",
 	       regs->cr_ipsr, regs->cr_ifs, ip, print_tainted(),
-	       init_utsname()->release, LINUX_PACKAGE_ID);
+	       init_utsname()->release);
 	print_symbol("ip is at %s\n", ip);
 	printk("unat: %016lx pfs : %016lx rsc : %016lx\n",
 	       regs->ar_unat, regs->ar_pfs, regs->ar_rsc);
@@ -216,7 +215,7 @@ static inline void play_dead(void)
 	unsigned int this_cpu = smp_processor_id();
 
 	/* Ack it */
-	__get_cpu_var(cpu_state) = CPU_DEAD;
+	__this_cpu_write(cpu_state, CPU_DEAD);
 
 	max_xtp();
 	local_irq_disable();
@@ -274,7 +273,7 @@ ia64_save_extra (struct task_struct *task)
 	if ((task->thread.flags & IA64_THREAD_PM_VALID) != 0)
 		pfm_save_regs(task);
 
-	info = __get_cpu_var(pfm_syst_info);
+	info = __this_cpu_read(pfm_syst_info);
 	if (info & PFM_CPUINFO_SYST_WIDE)
 		pfm_syst_wide_update_task(task, info, 0);
 #endif
@@ -294,7 +293,7 @@ ia64_load_extra (struct task_struct *task)
 	if ((task->thread.flags & IA64_THREAD_PM_VALID) != 0)
 		pfm_load_regs(task);
 
-	info = __get_cpu_var(pfm_syst_info);
+	info = __this_cpu_read(pfm_syst_info);
 	if (info & PFM_CPUINFO_SYST_WIDE) 
 		pfm_syst_wide_update_task(task, info, 1);
 #endif
@@ -663,7 +662,7 @@ void
 machine_restart (char *restart_cmd)
 {
 	(void) notify_die(DIE_MACHINE_RESTART, restart_cmd, NULL, 0, 0, 0);
-	(*efi.reset_system)(EFI_RESET_WARM, 0, 0, NULL);
+	efi_reboot(REBOOT_WARM, NULL);
 }
 
 void

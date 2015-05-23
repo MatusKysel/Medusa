@@ -63,7 +63,8 @@ ssize_t teleport_cycle(teleport_t * teleport, size_t userlimit)
 			case tp_PUTPtr:
 				teleport->data_to_user =
                                         (unsigned char *)&teleport->ip->args.putPtr.what;
-                                teleport->remaining = sizeof(void*);
+                                //teleport->remaining = sizeof(void*);
+                                teleport->remaining = 8; // Has to be 8 if we want to  have one protocol across all platforms ;) JK March 2015
 				break;
 			case tp_CUTNPASTE:
 				teleport->data_to_user =
@@ -77,7 +78,7 @@ ssize_t teleport_cycle(teleport_t * teleport, size_t userlimit)
 				break;
 			case tp_PUTKCLASS:
 				teleport->u.putkclass.cl.kclassid =
-					teleport->ip->args.putkclass.kclassdef;
+					(MCPptr_t)teleport->ip->args.putkclass.kclassdef; // possiblity for encryption .. JK note march 2015
 				teleport->u.putkclass.cl.size =
 					teleport->ip->args.putkclass.kclassdef->kobject_size;
 				memcpy(teleport->u.putkclass.cl.name,
@@ -89,12 +90,12 @@ ssize_t teleport_cycle(teleport_t * teleport, size_t userlimit)
 					sizeof(struct medusa_comm_kclass_s);
 #ifdef DEBUG
 				MED_PRINTF("-> class %s [%p]\n", teleport->u.putkclass.cl.name,
-						teleport->u.putkclass.cl.kclassid);
+						(void*)teleport->u.putkclass.cl.kclassid);
 #endif
 				break;
 			case tp_PUTEVTYPE:
 				teleport->u.putevtype.ev.evid =
-					teleport->ip->args.putevtype.evtypedef;
+					(MCPptr_t)teleport->ip->args.putevtype.evtypedef; // possibility for encryption ... JK note March 2015
 				teleport->u.putevtype.ev.size =
 					teleport->ip->args.putevtype.evtypedef->event_size;
 				teleport->u.putevtype.ev.actbit =
@@ -103,15 +104,15 @@ ssize_t teleport_cycle(teleport_t * teleport, size_t userlimit)
 					teleport->ip->args.putevtype.evtypedef->name,
 					MEDUSA_COMM_EVNAME_MAX < MEDUSA_EVNAME_MAX ? MEDUSA_COMM_EVNAME_MAX : MEDUSA_EVNAME_MAX);
 				teleport->u.putevtype.ev.ev_kclass[0] =
-					teleport->ip->args.putevtype.evtypedef->arg_kclass[0];
+					(MCPptr_t)teleport->ip->args.putevtype.evtypedef->arg_kclass[0]; // possibility for encryption ... JK note March 2015
 				teleport->u.putevtype.ev.ev_kclass[1] =
-					teleport->ip->args.putevtype.evtypedef->arg_kclass[1];
+					(MCPptr_t)teleport->ip->args.putevtype.evtypedef->arg_kclass[1]; // possibility for encryption ... JK note March 2015
 
 #ifdef DEBUG
 				MED_PRINTF("-> evtype %s [%p] with [%p] and [%p]\n", teleport->u.putevtype.ev.name,
-					teleport->u.putevtype.ev.evid,
-					teleport->u.putevtype.ev.ev_kclass[0],
-					teleport->u.putevtype.ev.ev_kclass[1]
+					(void*)teleport->u.putevtype.ev.evid,
+					(void*)teleport->u.putevtype.ev.ev_kclass[0],
+					(void*)teleport->u.putevtype.ev.ev_kclass[1]
 				);
 #endif
 

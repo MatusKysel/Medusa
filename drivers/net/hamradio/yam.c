@@ -372,8 +372,11 @@ static unsigned char *add_mcs(unsigned char *bits, int bitrate,
 		}
 		err = request_firmware(&fw, fw_name[predef], &pdev->dev);
 		platform_device_unregister(pdev);
-		if (err)
+		if (err) {
+			printk(KERN_ERR "Failed to load firmware \"%s\"\n",
+			       fw_name[predef]);
 			return NULL;
+		}
 		if (fw->size != YAM_FPGA_SIZE) {
 			printk(KERN_ERR "Bogus length %zu in firmware \"%s\"\n",
 			       fw->size, fw_name[predef]);
@@ -1144,7 +1147,7 @@ static int __init yam_init_driver(void)
 		sprintf(name, "yam%d", i);
 		
 		dev = alloc_netdev(sizeof(struct yam_port), name,
-				   yam_setup);
+				   NET_NAME_UNKNOWN, yam_setup);
 		if (!dev) {
 			pr_err("yam: cannot allocate net device\n");
 			err = -ENOMEM;
@@ -1181,7 +1184,7 @@ static void __exit yam_cleanup_driver(void)
 	struct yam_mcs *p;
 	int i;
 
-	del_timer(&yam_timer);
+	del_timer_sync(&yam_timer);
 	for (i = 0; i < NR_PORTS; i++) {
 		struct net_device *dev = yam_devs[i];
 		if (dev) {

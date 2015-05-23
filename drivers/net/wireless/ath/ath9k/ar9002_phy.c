@@ -201,7 +201,6 @@ static void ar9002_hw_spur_mitigate(struct ath_hw *ah,
 	ath9k_hw_get_channel_centers(ah, chan, &centers);
 	freq = centers.synth_center;
 
-	ah->config.spurmode = SPUR_ENABLE_EEPROM;
 	for (i = 0; i < AR_EEPROM_MODAL_SPURS; i++) {
 		cur_bb_spur = ah->eep_ops->get_spur_channel(ah, i, is2GHz);
 
@@ -644,9 +643,12 @@ static void ar9002_hw_spectral_scan_config(struct ath_hw *ah,
 	 * and fix otherwise.
 	 */
 	count = param->count;
-	if (param->endless)
-		count = 0x80;
-	else if (count & 0x80)
+	if (param->endless) {
+		if (AR_SREV_9271(ah))
+			count = 0;
+		else
+			count = 0x80;
+	} else if (count & 0x80)
 		count = 0x7f;
 
 	REG_RMW_FIELD(ah, AR_PHY_SPECTRAL_SCAN,

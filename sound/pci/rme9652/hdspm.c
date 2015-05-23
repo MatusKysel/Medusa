@@ -1077,7 +1077,7 @@ struct hdspm {
 };
 
 
-static DEFINE_PCI_DEVICE_TABLE(snd_hdspm_ids) = {
+static const struct pci_device_id snd_hdspm_ids[] = {
 	{
 	 .vendor = PCI_VENDOR_ID_XILINX,
 	 .device = PCI_DEVICE_ID_XILINX_HAMMERFALL_DSP_MADI,
@@ -1257,14 +1257,13 @@ static int hdspm_rate_multiplier(struct hdspm *hdspm, int rate)
 /* check for external sample rate, returns the sample rate in Hz*/
 static int hdspm_external_sample_rate(struct hdspm *hdspm)
 {
-	unsigned int status, status2, timecode;
+	unsigned int status, status2;
 	int syncref, rate = 0, rate_bits;
 
 	switch (hdspm->io_type) {
 	case AES32:
 		status2 = hdspm_read(hdspm, HDSPM_statusRegister2);
 		status = hdspm_read(hdspm, HDSPM_statusRegister);
-		timecode = hdspm_read(hdspm, HDSPM_timecodeRegister);
 
 		syncref = hdspm_autosync_ref(hdspm);
 		switch (syncref) {
@@ -1651,9 +1650,8 @@ static int hdspm_set_rate(struct hdspm * hdspm, int rate, int called_internally)
 			   just make a warning an remember setting
 			   for future master mode switching */
 
-			snd_printk(KERN_WARNING "HDSPM: "
-				   "Warning: device is not running "
-				   "as a clock master.\n");
+			dev_warn(hdspm->card->dev,
+				 "Warning: device is not running as a clock master.\n");
 			not_set = 1;
 		} else {
 
@@ -1664,15 +1662,14 @@ static int hdspm_set_rate(struct hdspm * hdspm, int rate, int called_internally)
 			if (hdspm_autosync_ref(hdspm) ==
 			    HDSPM_AUTOSYNC_FROM_NONE) {
 
-				snd_printk(KERN_WARNING "HDSPM: "
-					   "Detected no Externel Sync \n");
+				dev_warn(hdspm->card->dev,
+					 "Detected no Externel Sync\n");
 				not_set = 1;
 
 			} else if (rate != external_freq) {
 
-				snd_printk(KERN_WARNING "HDSPM: "
-					   "Warning: No AutoSync source for "
-					   "requested rate\n");
+				dev_warn(hdspm->card->dev,
+					 "Warning: No AutoSync source for requested rate\n");
 				not_set = 1;
 			}
 		}
@@ -1738,13 +1735,11 @@ static int hdspm_set_rate(struct hdspm * hdspm, int rate, int called_internally)
 
 	if (current_speed != target_speed
 	    && (hdspm->capture_pid >= 0 || hdspm->playback_pid >= 0)) {
-		snd_printk
-		    (KERN_ERR "HDSPM: "
-		     "cannot change from %s speed to %s speed mode "
-		     "(capture PID = %d, playback PID = %d)\n",
-		     hdspm_speed_names[current_speed],
-		     hdspm_speed_names[target_speed],
-		     hdspm->capture_pid, hdspm->playback_pid);
+		dev_err(hdspm->card->dev,
+			"cannot change from %s speed to %s speed mode (capture PID = %d, playback PID = %d)\n",
+			hdspm_speed_names[current_speed],
+			hdspm_speed_names[target_speed],
+			hdspm->capture_pid, hdspm->playback_pid);
 		return -EBUSY;
 	}
 
@@ -2206,10 +2201,10 @@ static inline int hdspm_get_pll_freq(struct hdspm *hdspm)
 	return rate;
 }
 
-/**
+/*
  * Calculate the real sample rate from the
  * current DDS value.
- **/
+ */
 static int hdspm_get_system_sample_rate(struct hdspm *hdspm)
 {
 	unsigned int rate;
@@ -2275,9 +2270,9 @@ static int snd_hdspm_put_system_sample_rate(struct snd_kcontrol *kcontrol,
 }
 
 
-/**
+/*
  * Returns the WordClock sample rate class for the given card.
- **/
+ */
 static int hdspm_get_wc_sample_rate(struct hdspm *hdspm)
 {
 	int status;
@@ -2300,9 +2295,9 @@ static int hdspm_get_wc_sample_rate(struct hdspm *hdspm)
 }
 
 
-/**
+/*
  * Returns the TCO sample rate class for the given card.
- **/
+ */
 static int hdspm_get_tco_sample_rate(struct hdspm *hdspm)
 {
 	int status;
@@ -2326,9 +2321,9 @@ static int hdspm_get_tco_sample_rate(struct hdspm *hdspm)
 }
 
 
-/**
+/*
  * Returns the SYNC_IN sample rate class for the given card.
- **/
+ */
 static int hdspm_get_sync_in_sample_rate(struct hdspm *hdspm)
 {
 	int status;
@@ -2348,9 +2343,9 @@ static int hdspm_get_sync_in_sample_rate(struct hdspm *hdspm)
 	return 0;
 }
 
-/**
+/*
  * Returns the AES sample rate class for the given card.
- **/
+ */
 static int hdspm_get_aes_sample_rate(struct hdspm *hdspm, int index)
 {
 	int timecode;
@@ -2366,10 +2361,10 @@ static int hdspm_get_aes_sample_rate(struct hdspm *hdspm, int index)
 	return 0;
 }
 
-/**
+/*
  * Returns the sample rate class for input source <idx> for
  * 'new style' cards like the AIO and RayDAT.
- **/
+ */
 static int hdspm_get_s1_sample_rate(struct hdspm *hdspm, unsigned int idx)
 {
 	int status = hdspm_read(hdspm, HDSPM_RD_STATUS_2);
@@ -2517,10 +2512,10 @@ static int snd_hdspm_get_autosync_sample_rate(struct snd_kcontrol *kcontrol,
 }
 
 
-/**
+/*
  * Returns the system clock mode for the given card.
  * @returns 0 - master, 1 - slave
- **/
+ */
 static int hdspm_system_clock_mode(struct hdspm *hdspm)
 {
 	switch (hdspm->io_type) {
@@ -2539,10 +2534,10 @@ static int hdspm_system_clock_mode(struct hdspm *hdspm)
 }
 
 
-/**
+/*
  * Sets the system clock mode.
  * @param mode 0 - master, 1 - slave
- **/
+ */
 static void hdspm_set_system_clock_mode(struct hdspm *hdspm, int mode)
 {
 	hdspm_set_toggle_setting(hdspm,
@@ -2649,18 +2644,7 @@ static int hdspm_set_clock_source(struct hdspm * hdspm, int mode)
 static int snd_hdspm_info_clock_source(struct snd_kcontrol *kcontrol,
 				       struct snd_ctl_elem_info *uinfo)
 {
-	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
-	uinfo->count = 1;
-	uinfo->value.enumerated.items = 9;
-
-	if (uinfo->value.enumerated.item >= uinfo->value.enumerated.items)
-		uinfo->value.enumerated.item =
-		    uinfo->value.enumerated.items - 1;
-
-	strcpy(uinfo->value.enumerated.name,
-	       texts_freq[uinfo->value.enumerated.item+1]);
-
-	return 0;
+	return snd_ctl_enum_info(uinfo, 1, 9, texts_freq + 1);
 }
 
 static int snd_hdspm_get_clock_source(struct snd_kcontrol *kcontrol,
@@ -2708,11 +2692,11 @@ static int snd_hdspm_put_clock_source(struct snd_kcontrol *kcontrol,
 }
 
 
-/**
+/*
  * Returns the current preferred sync reference setting.
  * The semantics of the return value are depending on the
  * card, please see the comments for clarification.
- **/
+ */
 static int hdspm_pref_sync_ref(struct hdspm * hdspm)
 {
 	switch (hdspm->io_type) {
@@ -2811,11 +2795,11 @@ static int hdspm_pref_sync_ref(struct hdspm * hdspm)
 }
 
 
-/**
+/*
  * Set the preferred sync reference to <pref>. The semantics
  * of <pref> are depending on the card type, see the comments
  * for clarification.
- **/
+ */
 static int hdspm_set_pref_sync_ref(struct hdspm * hdspm, int pref)
 {
 	int p = 0;
@@ -4117,9 +4101,9 @@ static int snd_hdspm_get_sync_check(struct snd_kcontrol *kcontrol,
 
 
 
-/**
+/*
  * TCO controls
- **/
+ */
 static void hdspm_tco_write(struct hdspm *hdspm)
 {
 	unsigned int tc[4] = { 0, 0, 0, 0};
@@ -4877,18 +4861,15 @@ snd_hdspm_proc_read_madi(struct snd_info_entry *entry,
 			 struct snd_info_buffer *buffer)
 {
 	struct hdspm *hdspm = entry->private_data;
-	unsigned int status, status2, control, freq;
+	unsigned int status, status2;
 
 	char *pref_sync_ref;
 	char *autosync_ref;
 	char *system_clock_mode;
-	char *insel;
 	int x, x2;
 
 	status = hdspm_read(hdspm, HDSPM_statusRegister);
 	status2 = hdspm_read(hdspm, HDSPM_statusRegister2);
-	control = hdspm->control_register;
-	freq = hdspm_read(hdspm, HDSPM_timecodeRegister);
 
 	snd_iprintf(buffer, "%s (Card #%d) Rev.%x Status2first3bits: %x\n",
 			hdspm->card_name, hdspm->card->number + 1,
@@ -4950,17 +4931,6 @@ snd_hdspm_proc_read_madi(struct snd_info_entry *entry,
 
 	snd_iprintf(buffer, "Line out: %s\n",
 		(hdspm->control_register & HDSPM_LineOut) ? "on " : "off");
-
-	switch (hdspm->control_register & HDSPM_InputMask) {
-	case HDSPM_InputOptical:
-		insel = "Optical";
-		break;
-	case HDSPM_InputCoaxial:
-		insel = "Coaxial";
-		break;
-	default:
-		insel = "Unknown";
-	}
 
 	snd_iprintf(buffer,
 		"ClearTrackMarker = %s, Transmit in %s Channel Mode, "
@@ -5206,14 +5176,12 @@ snd_hdspm_proc_read_raydat(struct snd_info_entry *entry,
 			 struct snd_info_buffer *buffer)
 {
 	struct hdspm *hdspm = entry->private_data;
-	unsigned int status1, status2, status3, control, i;
+	unsigned int status1, status2, status3, i;
 	unsigned int lock, sync;
 
 	status1 = hdspm_read(hdspm, HDSPM_RD_STATUS_1); /* s1 */
 	status2 = hdspm_read(hdspm, HDSPM_RD_STATUS_2); /* freq */
 	status3 = hdspm_read(hdspm, HDSPM_RD_STATUS_3); /* s2 */
-
-	control = hdspm->control_register;
 
 	snd_iprintf(buffer, "STATUS1: 0x%08x\n", status1);
 	snd_iprintf(buffer, "STATUS2: 0x%08x\n", status2);
@@ -5435,7 +5403,7 @@ static irqreturn_t snd_hdspm_interrupt(int irq, void *dev_id)
 			HDSPM_midi2IRQPending | HDSPM_midi3IRQPending);
 
 	/* now = get_cycles(); */
-	/**
+	/*
 	 *   LAT_2..LAT_0 period  counter (win)  counter (mac)
 	 *          6       4096   ~256053425     ~514672358
 	 *          5       2048   ~128024983     ~257373821
@@ -5444,9 +5412,9 @@ static irqreturn_t snd_hdspm_interrupt(int irq, void *dev_id)
 	 *          2        256    ~16003039      ~32260176
 	 *          1        128     ~7998738      ~16194507
 	 *          0         64     ~3998231       ~8191558
-	 **/
+	 */
 	/*
-	   snd_printk(KERN_INFO "snd_hdspm_interrupt %llu @ %llx\n",
+	  dev_info(hdspm->card->dev, "snd_hdspm_interrupt %llu @ %llx\n",
 	   now-hdspm->last_interrupt, status & 0xFFC0);
 	   hdspm->last_interrupt = now;
 	*/
@@ -5583,7 +5551,7 @@ static int snd_hdspm_hw_params(struct snd_pcm_substream *substream,
 	spin_lock_irq(&hdspm->lock);
 	err = hdspm_set_rate(hdspm, params_rate(params), 0);
 	if (err < 0) {
-		snd_printk(KERN_INFO "err on hdspm_set_rate: %d\n", err);
+		dev_info(hdspm->card->dev, "err on hdspm_set_rate: %d\n", err);
 		spin_unlock_irq(&hdspm->lock);
 		_snd_pcm_hw_param_setempty(params,
 				SNDRV_PCM_HW_PARAM_RATE);
@@ -5594,7 +5562,8 @@ static int snd_hdspm_hw_params(struct snd_pcm_substream *substream,
 	err = hdspm_set_interrupt_interval(hdspm,
 			params_period_size(params));
 	if (err < 0) {
-		snd_printk(KERN_INFO "err on hdspm_set_interrupt_interval: %d\n", err);
+		dev_info(hdspm->card->dev,
+			 "err on hdspm_set_interrupt_interval: %d\n", err);
 		_snd_pcm_hw_param_setempty(params,
 				SNDRV_PCM_HW_PARAM_PERIOD_SIZE);
 		return err;
@@ -5610,7 +5579,8 @@ static int snd_hdspm_hw_params(struct snd_pcm_substream *substream,
 	err =
 		snd_pcm_lib_malloc_pages(substream, HDSPM_DMA_AREA_BYTES);
 	if (err < 0) {
-		snd_printk(KERN_INFO "err on snd_pcm_lib_malloc_pages: %d\n", err);
+		dev_info(hdspm->card->dev,
+			 "err on snd_pcm_lib_malloc_pages: %d\n", err);
 		return err;
 	}
 
@@ -5624,7 +5594,8 @@ static int snd_hdspm_hw_params(struct snd_pcm_substream *substream,
 
 		hdspm->playback_buffer =
 			(unsigned char *) substream->runtime->dma_area;
-		snd_printdd("Allocated sample buffer for playback at %p\n",
+		dev_dbg(hdspm->card->dev,
+			"Allocated sample buffer for playback at %p\n",
 				hdspm->playback_buffer);
 	} else {
 		hdspm_set_sgbuf(hdspm, substream, HDSPM_pageAddressBufferIn,
@@ -5635,18 +5606,21 @@ static int snd_hdspm_hw_params(struct snd_pcm_substream *substream,
 
 		hdspm->capture_buffer =
 			(unsigned char *) substream->runtime->dma_area;
-		snd_printdd("Allocated sample buffer for capture at %p\n",
+		dev_dbg(hdspm->card->dev,
+			"Allocated sample buffer for capture at %p\n",
 				hdspm->capture_buffer);
 	}
 
 	/*
-	   snd_printdd("Allocated sample buffer for %s at 0x%08X\n",
+	   dev_dbg(hdspm->card->dev,
+	   "Allocated sample buffer for %s at 0x%08X\n",
 	   substream->stream == SNDRV_PCM_STREAM_PLAYBACK ?
 	   "playback" : "capture",
 	   snd_pcm_sgbuf_get_addr(substream, 0));
 	   */
 	/*
-	   snd_printdd("set_hwparams: %s %d Hz, %d channels, bs = %d\n",
+	   dev_dbg(hdspm->card->dev,
+	   "set_hwparams: %s %d Hz, %d channels, bs = %d\n",
 	   substream->stream == SNDRV_PCM_STREAM_PLAYBACK ?
 	   "playback" : "capture",
 	   params_rate(params), params_channels(params),
@@ -5667,12 +5641,14 @@ static int snd_hdspm_hw_params(struct snd_pcm_substream *substream,
 	/* Switch to native float format if requested */
 	if (SNDRV_PCM_FORMAT_FLOAT_LE == params_format(params)) {
 		if (!(hdspm->control_register & HDSPe_FLOAT_FORMAT))
-			snd_printk(KERN_INFO "hdspm: Switching to native 32bit LE float format.\n");
+			dev_info(hdspm->card->dev,
+				 "Switching to native 32bit LE float format.\n");
 
 		hdspm->control_register |= HDSPe_FLOAT_FORMAT;
 	} else if (SNDRV_PCM_FORMAT_S32_LE == params_format(params)) {
 		if (hdspm->control_register & HDSPe_FLOAT_FORMAT)
-			snd_printk(KERN_INFO "hdspm: Switching to native 32bit LE integer format.\n");
+			dev_info(hdspm->card->dev,
+				 "Switching to native 32bit LE integer format.\n");
 
 		hdspm->control_register &= ~HDSPe_FLOAT_FORMAT;
 	}
@@ -5715,12 +5691,16 @@ static int snd_hdspm_channel_info(struct snd_pcm_substream *substream,
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		if (snd_BUG_ON(info->channel >= hdspm->max_channels_out)) {
-			snd_printk(KERN_INFO "snd_hdspm_channel_info: output channel out of range (%d)\n", info->channel);
+			dev_info(hdspm->card->dev,
+				 "snd_hdspm_channel_info: output channel out of range (%d)\n",
+				 info->channel);
 			return -EINVAL;
 		}
 
 		if (hdspm->channel_map_out[info->channel] < 0) {
-			snd_printk(KERN_INFO "snd_hdspm_channel_info: output channel %d mapped out\n", info->channel);
+			dev_info(hdspm->card->dev,
+				 "snd_hdspm_channel_info: output channel %d mapped out\n",
+				 info->channel);
 			return -EINVAL;
 		}
 
@@ -5728,12 +5708,16 @@ static int snd_hdspm_channel_info(struct snd_pcm_substream *substream,
 			HDSPM_CHANNEL_BUFFER_BYTES;
 	} else {
 		if (snd_BUG_ON(info->channel >= hdspm->max_channels_in)) {
-			snd_printk(KERN_INFO "snd_hdspm_channel_info: input channel out of range (%d)\n", info->channel);
+			dev_info(hdspm->card->dev,
+				 "snd_hdspm_channel_info: input channel out of range (%d)\n",
+				 info->channel);
 			return -EINVAL;
 		}
 
 		if (hdspm->channel_map_in[info->channel] < 0) {
-			snd_printk(KERN_INFO "snd_hdspm_channel_info: input channel %d mapped out\n", info->channel);
+			dev_info(hdspm->card->dev,
+				 "snd_hdspm_channel_info: input channel %d mapped out\n",
+				 info->channel);
 			return -EINVAL;
 		}
 
@@ -6283,7 +6267,7 @@ static int snd_hdspm_hwdep_ioctl(struct snd_hwdep *hw, struct file *file,
 
 		s = copy_to_user(argp, levels, sizeof(struct hdspm_peak_rms));
 		if (0 != s) {
-			/* snd_printk(KERN_ERR "copy_to_user(.., .., %lu): %lu
+			/* dev_err(hdspm->card->dev, "copy_to_user(.., .., %lu): %lu
 			 [Levels]\n", sizeof(struct hdspm_peak_rms), s);
 			 */
 			return -EFAULT;
@@ -6329,7 +6313,7 @@ static int snd_hdspm_hwdep_ioctl(struct snd_hwdep *hw, struct file *file,
 		s = copy_to_user(argp, &ltc, sizeof(struct hdspm_ltc));
 		if (0 != s) {
 			/*
-			 snd_printk(KERN_ERR "copy_to_user(.., .., %lu): %lu [LTC]\n", sizeof(struct hdspm_ltc), s); */
+			  dev_err(hdspm->card->dev, "copy_to_user(.., .., %lu): %lu [LTC]\n", sizeof(struct hdspm_ltc), s); */
 			return -EFAULT;
 		}
 
@@ -6494,11 +6478,13 @@ static int snd_hdspm_preallocate_memory(struct hdspm *hdspm)
 						   wanted,
 						   wanted);
 	if (err < 0) {
-		snd_printdd("Could not preallocate %zd Bytes\n", wanted);
+		dev_dbg(hdspm->card->dev,
+			"Could not preallocate %zd Bytes\n", wanted);
 
 		return err;
 	} else
-		snd_printdd(" Preallocated %zd Bytes\n", wanted);
+		dev_dbg(hdspm->card->dev,
+			" Preallocated %zd Bytes\n", wanted);
 
 	return 0;
 }
@@ -6559,7 +6545,7 @@ static int snd_hdspm_create_alsa_devices(struct snd_card *card,
 {
 	int err, i;
 
-	snd_printdd("Create card...\n");
+	dev_dbg(card->dev, "Create card...\n");
 	err = snd_hdspm_create_pcm(card, hdspm);
 	if (err < 0)
 		return err;
@@ -6581,7 +6567,7 @@ static int snd_hdspm_create_alsa_devices(struct snd_card *card,
 	if (err < 0)
 		return err;
 
-	snd_printdd("proc init...\n");
+	dev_dbg(card->dev, "proc init...\n");
 	snd_hdspm_proc_init(hdspm);
 
 	hdspm->system_sample_rate = -1;
@@ -6592,23 +6578,23 @@ static int snd_hdspm_create_alsa_devices(struct snd_card *card,
 	hdspm->capture_substream = NULL;
 	hdspm->playback_substream = NULL;
 
-	snd_printdd("Set defaults...\n");
+	dev_dbg(card->dev, "Set defaults...\n");
 	err = snd_hdspm_set_defaults(hdspm);
 	if (err < 0)
 		return err;
 
-	snd_printdd("Update mixer controls...\n");
+	dev_dbg(card->dev, "Update mixer controls...\n");
 	hdspm_update_simple_mixer_controls(hdspm);
 
-	snd_printdd("Initializeing complete ???\n");
+	dev_dbg(card->dev, "Initializeing complete ???\n");
 
 	err = snd_card_register(card);
 	if (err < 0) {
-		snd_printk(KERN_ERR "HDSPM: error registering card\n");
+		dev_err(card->dev, "error registering card\n");
 		return err;
 	}
 
-	snd_printdd("... yes now\n");
+	dev_dbg(card->dev, "... yes now\n");
 
 	return 0;
 }
@@ -6662,8 +6648,8 @@ static int snd_hdspm_create(struct snd_card *card,
 			hdspm->card_name = "RME MADI";
 			hdspm->midiPorts = 3;
 		} else {
-			snd_printk(KERN_ERR
-				"HDSPM: unknown firmware revision %x\n",
+			dev_err(card->dev,
+				"unknown firmware revision %x\n",
 				hdspm->firmware_rev);
 			return -ENODEV;
 		}
@@ -6682,36 +6668,35 @@ static int snd_hdspm_create(struct snd_card *card,
 	hdspm->port = pci_resource_start(pci, 0);
 	io_extent = pci_resource_len(pci, 0);
 
-	snd_printdd("grabbed memory region 0x%lx-0x%lx\n",
+	dev_dbg(card->dev, "grabbed memory region 0x%lx-0x%lx\n",
 			hdspm->port, hdspm->port + io_extent - 1);
 
 	hdspm->iobase = ioremap_nocache(hdspm->port, io_extent);
 	if (!hdspm->iobase) {
-		snd_printk(KERN_ERR "HDSPM: "
-				"unable to remap region 0x%lx-0x%lx\n",
+		dev_err(card->dev, "unable to remap region 0x%lx-0x%lx\n",
 				hdspm->port, hdspm->port + io_extent - 1);
 		return -EBUSY;
 	}
-	snd_printdd("remapped region (0x%lx) 0x%lx-0x%lx\n",
+	dev_dbg(card->dev, "remapped region (0x%lx) 0x%lx-0x%lx\n",
 			(unsigned long)hdspm->iobase, hdspm->port,
 			hdspm->port + io_extent - 1);
 
 	if (request_irq(pci->irq, snd_hdspm_interrupt,
 			IRQF_SHARED, KBUILD_MODNAME, hdspm)) {
-		snd_printk(KERN_ERR "HDSPM: unable to use IRQ %d\n", pci->irq);
+		dev_err(card->dev, "unable to use IRQ %d\n", pci->irq);
 		return -EBUSY;
 	}
 
-	snd_printdd("use IRQ %d\n", pci->irq);
+	dev_dbg(card->dev, "use IRQ %d\n", pci->irq);
 
 	hdspm->irq = pci->irq;
 
-	snd_printdd("kmalloc Mixer memory of %zd Bytes\n",
+	dev_dbg(card->dev, "kmalloc Mixer memory of %zd Bytes\n",
 			sizeof(struct hdspm_mixer));
 	hdspm->mixer = kzalloc(sizeof(struct hdspm_mixer), GFP_KERNEL);
 	if (!hdspm->mixer) {
-		snd_printk(KERN_ERR "HDSPM: "
-				"unable to kmalloc Mixer memory of %d Bytes\n",
+		dev_err(card->dev,
+			"unable to kmalloc Mixer memory of %d Bytes\n",
 				(int)sizeof(struct hdspm_mixer));
 		return -ENOMEM;
 	}
@@ -6780,14 +6765,14 @@ static int snd_hdspm_create(struct snd_card *card,
 		hdspm->qs_out_channels = AIO_OUT_QS_CHANNELS;
 
 		if (0 == (hdspm_read(hdspm, HDSPM_statusRegister2) & HDSPM_s2_AEBI_D)) {
-			snd_printk(KERN_INFO "HDSPM: AEB input board found\n");
+			dev_info(card->dev, "AEB input board found\n");
 			hdspm->ss_in_channels += 4;
 			hdspm->ds_in_channels += 4;
 			hdspm->qs_in_channels += 4;
 		}
 
 		if (0 == (hdspm_read(hdspm, HDSPM_statusRegister2) & HDSPM_s2_AEBO_D)) {
-			snd_printk(KERN_INFO "HDSPM: AEB output board found\n");
+			dev_info(card->dev, "AEB output board found\n");
 			hdspm->ss_out_channels += 4;
 			hdspm->ds_out_channels += 4;
 			hdspm->qs_out_channels += 4;
@@ -6854,7 +6839,7 @@ static int snd_hdspm_create(struct snd_card *card,
 			if (NULL != hdspm->tco) {
 				hdspm_tco_write(hdspm);
 			}
-			snd_printk(KERN_INFO "HDSPM: AIO/RayDAT TCO module found\n");
+			dev_info(card->dev, "AIO/RayDAT TCO module found\n");
 		} else {
 			hdspm->tco = NULL;
 		}
@@ -6869,7 +6854,7 @@ static int snd_hdspm_create(struct snd_card *card,
 			if (NULL != hdspm->tco) {
 				hdspm_tco_write(hdspm);
 			}
-			snd_printk(KERN_INFO "HDSPM: MADI/AES TCO module found\n");
+			dev_info(card->dev, "MADI/AES TCO module found\n");
 		} else {
 			hdspm->tco = NULL;
 		}
@@ -6951,7 +6936,7 @@ static int snd_hdspm_create(struct snd_card *card,
 		}
 	}
 
-	snd_printdd("create alsa devices.\n");
+	dev_dbg(card->dev, "create alsa devices.\n");
 	err = snd_hdspm_create_alsa_devices(card, hdspm);
 	if (err < 0)
 		return err;
@@ -7016,8 +7001,8 @@ static int snd_hdspm_probe(struct pci_dev *pci,
 		return -ENOENT;
 	}
 
-	err = snd_card_create(index[dev], id[dev],
-			THIS_MODULE, sizeof(struct hdspm), &card);
+	err = snd_card_new(&pci->dev, index[dev], id[dev],
+			   THIS_MODULE, sizeof(struct hdspm), &card);
 	if (err < 0)
 		return err;
 
@@ -7025,8 +7010,6 @@ static int snd_hdspm_probe(struct pci_dev *pci,
 	card->private_free = snd_hdspm_card_free;
 	hdspm->dev = dev;
 	hdspm->pci = pci;
-
-	snd_card_set_dev(card, &pci->dev);
 
 	err = snd_hdspm_create(card, hdspm);
 	if (err < 0) {

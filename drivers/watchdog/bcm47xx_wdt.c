@@ -16,7 +16,6 @@
 #include <linux/bcm47xx_wdt.h>
 #include <linux/bitops.h>
 #include <linux/errno.h>
-#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -243,7 +242,6 @@ static int bcm47xx_wdt_remove(struct platform_device *pdev)
 
 static struct platform_driver bcm47xx_wdt_driver = {
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "bcm47xx-wdt",
 	},
 	.probe		= bcm47xx_wdt_probe,

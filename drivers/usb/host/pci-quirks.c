@@ -12,7 +12,6 @@
 #include <linux/kconfig.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
-#include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/export.h>
 #include <linux/acpi.h>
@@ -234,10 +233,8 @@ commit:
 
 		spin_unlock_irqrestore(&amd_lock, flags);
 
-		if (info.nb_dev)
-			pci_dev_put(info.nb_dev);
-		if (info.smbus_dev)
-			pci_dev_put(info.smbus_dev);
+		pci_dev_put(info.nb_dev);
+		pci_dev_put(info.smbus_dev);
 
 	} else {
 		/* no race - commit the result */
@@ -448,10 +445,8 @@ void usb_amd_dev_put(void)
 
 	spin_unlock_irqrestore(&amd_lock, flags);
 
-	if (nb)
-		pci_dev_put(nb);
-	if (smbus)
-		pci_dev_put(smbus);
+	pci_dev_put(nb);
+	pci_dev_put(smbus);
 }
 EXPORT_SYMBOL_GPL(usb_amd_dev_put);
 
@@ -572,7 +567,8 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 {
 	void __iomem *base;
 	u32 control;
-	u32 fminterval;
+	u32 fminterval = 0;
+	bool no_fminterval = false;
 	int cnt;
 
 	if (!mmio_resource_enabled(pdev, 0))
@@ -581,6 +577,13 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 	base = pci_ioremap_bar(pdev, 0);
 	if (base == NULL)
 		return;
+
+	/*
+	 * ULi M5237 OHCI controller locks the whole system when accessing
+	 * the OHCI_FMINTERVAL offset.
+	 */
+	if (pdev->vendor == PCI_VENDOR_ID_AL && pdev->device == 0x5237)
+		no_fminterval = true;
 
 	control = readl(base + OHCI_CONTROL);
 
@@ -620,7 +623,9 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 	}
 
 	/* software reset of the controller, preserving HcFmInterval */
-	fminterval = readl(base + OHCI_FMINTERVAL);
+	if (!no_fminterval)
+		fminterval = readl(base + OHCI_FMINTERVAL);
+
 	writel(OHCI_HCR, base + OHCI_CMDSTATUS);
 
 	/* reset requires max 10 us delay */
@@ -629,7 +634,9 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 			break;
 		udelay(1);
 	}
-	writel(fminterval, base + OHCI_FMINTERVAL);
+
+	if (!no_fminterval)
+		writel(fminterval, base + OHCI_FMINTERVAL);
 
 	/* Now the controller is safely in SUSPEND and nothing can wake it up */
 	iounmap(base);
@@ -657,6 +664,14 @@ static const struct dmi_system_id ehci_dmi_nohandoff_table[] = {
 			DMI_MATCH(DMI_BIOS_VERSION, "Lucid-"),
 		},
 	},
+	{
+		/* HASEE E200 */
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "HASEE"),
+			DMI_MATCH(DMI_BOARD_NAME, "E210"),
+			DMI_MATCH(DMI_BIOS_VERSION, "6.00"),
+		},
+	},
 	{ }
 };
 
@@ -666,9 +681,14 @@ static void ehci_bios_handoff(struct pci_dev *pdev,
 {
 	int try_handoff = 1, tried_handoff = 0;
 
-	/* The Pegatron Lucid tablet sporadically waits for 98 seconds trying
-	 * the handoff on its unused controller.  Skip it. */
-	if (pdev->vendor == 0x8086 && pdev->device == 0x283a) {
+	/*
+	 * The Pegatron Lucid tablet sporadically waits for 98 seconds trying
+	 * the handoff on its unused controller.  Skip it.
+	 *
+	 * The HASEE E200 hangs when the semaphore is set (bugzilla #77021).
+	 */
+	if (pdev->vendor == 0x8086 && (pdev->device == 0x283a ||
+			pdev->device == 0x27cc)) {
 		if (dmi_check_system(ehci_dmi_nohandoff_table))
 			try_handoff = 0;
 	}
@@ -847,6 +867,13 @@ void usb_enable_intel_xhci_ports(struct pci_dev *xhci_pdev)
 	u32		ports_available;
 	bool		ehci_found = false;
 	struct pci_dev	*companion = NULL;
+
+	/* Sony VAIO t-series with subsystem device ID 90a8 is not capable of
+	 * switching ports from EHCI to xHCI
+	 */
+	if (xhci_pdev->subsystem_vendor == PCI_VENDOR_ID_SONY &&
+	    xhci_pdev->subsystem_device == 0x90a8)
+		return;
 
 	/* make sure an intel EHCI controller exists */
 	for_each_pci_dev(companion) {

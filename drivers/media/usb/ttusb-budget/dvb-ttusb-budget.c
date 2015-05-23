@@ -296,8 +296,10 @@ static int ttusb_boot_dsp(struct ttusb *ttusb)
 
 	err = request_firmware(&fw, "ttusb-budget/dspbootcode.bin",
 			       &ttusb->dev->dev);
-	if (err)
+	if (err) {
+		printk(KERN_ERR "ttusb-budget: failed to request firmware\n");
 		return err;
+	}
 
 	/* BootBlock */
 	b[0] = 0xaa;
@@ -789,8 +791,7 @@ static void ttusb_free_iso_urbs(struct ttusb *ttusb)
 	int i;
 
 	for (i = 0; i < ISO_BUF_COUNT; i++)
-		if (ttusb->iso_urb[i])
-			usb_free_urb(ttusb->iso_urb[i]);
+		usb_free_urb(ttusb->iso_urb[i]);
 
 	pci_free_consistent(NULL,
 			    ISO_FRAME_SIZE * FRAMES_PER_ISO_BUF *
@@ -802,20 +803,15 @@ static int ttusb_alloc_iso_urbs(struct ttusb *ttusb)
 {
 	int i;
 
-	ttusb->iso_buffer = pci_alloc_consistent(NULL,
-						 ISO_FRAME_SIZE *
-						 FRAMES_PER_ISO_BUF *
-						 ISO_BUF_COUNT,
-						 &ttusb->iso_dma_handle);
+	ttusb->iso_buffer = pci_zalloc_consistent(NULL,
+						  ISO_FRAME_SIZE * FRAMES_PER_ISO_BUF * ISO_BUF_COUNT,
+						  &ttusb->iso_dma_handle);
 
 	if (!ttusb->iso_buffer) {
 		dprintk("%s: pci_alloc_consistent - not enough memory\n",
 			__func__);
 		return -ENOMEM;
 	}
-
-	memset(ttusb->iso_buffer, 0,
-	       ISO_FRAME_SIZE * FRAMES_PER_ISO_BUF * ISO_BUF_COUNT);
 
 	for (i = 0; i < ISO_BUF_COUNT; i++) {
 		struct urb *urb;

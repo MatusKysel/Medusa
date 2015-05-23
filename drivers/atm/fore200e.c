@@ -2505,9 +2505,10 @@ static int fore200e_load_and_start_fw(struct fore200e *fore200e)
 	return err;
 
     sprintf(buf, "%s%s", fore200e->bus->proc_name, FW_EXT);
-    err = request_firmware(&firmware, buf, device);
-    if (err)
+    if ((err = request_firmware(&firmware, buf, device)) < 0) {
+	printk(FORE200E "problem loading firmware image %s\n", fore200e->bus->model_name);
 	return err;
+    }
 
     fw_data = (__le32 *) firmware->data;
     fw_size = firmware->size / sizeof(u32);
@@ -2686,7 +2687,6 @@ MODULE_DEVICE_TABLE(of, fore200e_sba_match);
 static struct platform_driver fore200e_sba_driver = {
 	.driver = {
 		.name = "fore_200e",
-		.owner = THIS_MODULE,
 		.of_match_table = fore200e_sba_match,
 	},
 	.probe		= fore200e_sba_probe,
@@ -2779,7 +2779,7 @@ static struct pci_driver fore200e_pca_driver = {
 
 static int __init fore200e_module_init(void)
 {
-	int err;
+	int err = 0;
 
 	printk(FORE200E "FORE Systems 200E-series ATM driver - version " FORE200E_VERSION "\n");
 

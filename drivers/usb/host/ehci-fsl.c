@@ -93,28 +93,14 @@ static int usb_hcd_fsl_probe(const struct hc_driver *driver,
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		dev_err(&pdev->dev,
-			"Found HC with no register addr. Check %s setup!\n",
-			dev_name(&pdev->dev));
-		retval = -ENODEV;
+	hcd->regs = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(hcd->regs)) {
+		retval = PTR_ERR(hcd->regs);
 		goto err2;
 	}
+
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
-	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len,
-				driver->description)) {
-		dev_dbg(&pdev->dev, "controller already in use\n");
-		retval = -EBUSY;
-		goto err2;
-	}
-	hcd->regs = ioremap(hcd->rsrc_start, hcd->rsrc_len);
-
-	if (hcd->regs == NULL) {
-		dev_dbg(&pdev->dev, "error mapping memory\n");
-		retval = -EFAULT;
-		goto err3;
-	}
 
 	pdata->regs = hcd->regs;
 
@@ -126,7 +112,7 @@ static int usb_hcd_fsl_probe(const struct hc_driver *driver,
 	 */
 	if (pdata->init && pdata->init(pdev)) {
 		retval = -ENODEV;
-		goto err4;
+		goto err2;
 	}
 
 	/* Enable USB controller, 83xx or 8536 */
@@ -137,36 +123,33 @@ static int usb_hcd_fsl_probe(const struct hc_driver *driver,
 
 	retval = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (retval != 0)
-		goto err4;
+		goto err2;
+	device_wakeup_enable(hcd->self.controller);
 
 #ifdef CONFIG_USB_OTG
 	if (pdata->operating_mode == FSL_USB2_DR_OTG) {
 		struct ehci_hcd *ehci = hcd_to_ehci(hcd);
 
-		hcd->phy = usb_get_phy(USB_PHY_TYPE_USB2);
+		hcd->usb_phy = usb_get_phy(USB_PHY_TYPE_USB2);
 		dev_dbg(&pdev->dev, "hcd=0x%p  ehci=0x%p, phy=0x%p\n",
-			hcd, ehci, hcd->phy);
+			hcd, ehci, hcd->usb_phy);
 
-		if (!IS_ERR_OR_NULL(hcd->phy)) {
-			retval = otg_set_host(hcd->phy->otg,
+		if (!IS_ERR_OR_NULL(hcd->usb_phy)) {
+			retval = otg_set_host(hcd->usb_phy->otg,
 					      &ehci_to_hcd(ehci)->self);
 			if (retval) {
-				usb_put_phy(hcd->phy);
-				goto err4;
+				usb_put_phy(hcd->usb_phy);
+				goto err2;
 			}
 		} else {
 			dev_err(&pdev->dev, "can't find phy\n");
 			retval = -ENODEV;
-			goto err4;
+			goto err2;
 		}
 	}
 #endif
 	return retval;
 
-      err4:
-	iounmap(hcd->regs);
-      err3:
-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
       err2:
 	usb_put_hcd(hcd);
       err1:
@@ -192,9 +175,9 @@ static void usb_hcd_fsl_remove(struct usb_hcd *hcd,
 {
 	struct fsl_usb2_platform_data *pdata = dev_get_platdata(&pdev->dev);
 
-	if (!IS_ERR_OR_NULL(hcd->phy)) {
-		otg_set_host(hcd->phy->otg, NULL);
-		usb_put_phy(hcd->phy);
+	if (!IS_ERR_OR_NULL(hcd->usb_phy)) {
+		otg_set_host(hcd->usb_phy->otg, NULL);
+		usb_put_phy(hcd->usb_phy);
 	}
 
 	usb_remove_hcd(hcd);
@@ -205,8 +188,6 @@ static void usb_hcd_fsl_remove(struct usb_hcd *hcd,
 	 */
 	if (pdata->exit)
 		pdata->exit(pdev);
-	iounmap(hcd->regs);
-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
 	usb_put_hcd(hcd);
 }
 
@@ -261,13 +242,14 @@ static int ehci_fsl_setup_phy(struct usb_hcd *hcd,
 		break;
 	}
 
-	if (pdata->have_sysif_regs && pdata->controller_ver &&
+	if (pdata->have_sysif_regs &&
+	    pdata->controller_ver > FSL_USB_VER_1_6 &&
 	    (phy_mode == FSL_USB2_PHY_ULPI)) {
 		/* check PHY_CLK_VALID to get phy clk valid */
 		if (!(spin_event_timeout(in_be32(non_ehci + FSL_SOC_USB_CTRL) &
 				PHY_CLK_VALID, FSL_USB_PHY_CLK_TIMEOUT, 0) ||
 				in_be32(non_ehci + FSL_SOC_USB_PRICTRL))) {
-			printk(KERN_WARNING "fsl-ehci: USB PHY clock invalid\n");
+			dev_warn(hcd->self.controller, "USB PHY clock invalid\n");
 			return -EINVAL;
 		}
 	}
@@ -413,7 +395,7 @@ static int ehci_fsl_mpc512x_drv_suspend(struct device *dev)
 	struct fsl_usb2_platform_data *pdata = dev_get_platdata(dev);
 	u32 tmp;
 
-#if defined(DEBUG) || defined(CONFIG_DYNAMIC_DEBUG)
+#ifdef CONFIG_DYNAMIC_DEBUG
 	u32 mode = ehci_readl(ehci, hcd->regs + FSL_SOC_USB_USBMODE);
 	mode &= USBMODE_CM_MASK;
 	tmp = ehci_readl(ehci, hcd->regs + 0x140);	/* usbcmd */
@@ -639,7 +621,7 @@ static int ehci_start_port_reset(struct usb_hcd *hcd, unsigned port)
 	if (!(status & PORT_CONNECT))
 		return -ENODEV;
 
-	/* khubd will finish the reset later */
+	/* hub_wq will finish the reset later */
 	if (ehci_is_TDI(ehci)) {
 		writel(PORT_RESET |
 		       (status & ~(PORT_CSC | PORT_PEC | PORT_OCC)),

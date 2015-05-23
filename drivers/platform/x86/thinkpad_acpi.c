@@ -61,7 +61,6 @@
 #include <linux/freezer.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-
 #include <linux/nvram.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -74,21 +73,16 @@
 #include <linux/input.h>
 #include <linux/leds.h>
 #include <linux/rfkill.h>
-#include <asm/uaccess.h>
-
 #include <linux/dmi.h>
 #include <linux/jiffies.h>
 #include <linux/workqueue.h>
-
+#include <linux/acpi.h>
+#include <linux/pci_ids.h>
+#include <linux/thinkpad_acpi.h>
 #include <sound/core.h>
 #include <sound/control.h>
 #include <sound/initval.h>
-
-#include <acpi/acpi_drivers.h>
-
-#include <linux/pci_ids.h>
-
-#include <linux/thinkpad_acpi.h>
+#include <asm/uaccess.h>
 
 /* ThinkPad CMOS commands */
 #define TP_CMOS_VOLUME_DOWN	0
@@ -978,7 +972,6 @@ static void tpacpi_shutdown_handler(struct platform_device *pdev)
 static struct platform_driver tpacpi_pdriver = {
 	.driver = {
 		.name = TPACPI_DRVR_NAME,
-		.owner = THIS_MODULE,
 		.pm = &tpacpi_pm,
 	},
 	.shutdown = tpacpi_shutdown_handler,
@@ -987,7 +980,6 @@ static struct platform_driver tpacpi_pdriver = {
 static struct platform_driver tpacpi_hwmon_pdriver = {
 	.driver = {
 		.name = TPACPI_HWMON_DRVR_NAME,
-		.owner = THIS_MODULE,
 	},
 };
 
@@ -2327,53 +2319,55 @@ static void hotkey_read_nvram(struct tp_nvram_state *n, const u32 m)
 	}
 }
 
+#define TPACPI_COMPARE_KEY(__scancode, __member) \
+do { \
+	if ((event_mask & (1 << __scancode)) && \
+	    oldn->__member != newn->__member) \
+		tpacpi_hotkey_send_key(__scancode); \
+} while (0)
+
+#define TPACPI_MAY_SEND_KEY(__scancode) \
+do { \
+	if (event_mask & (1 << __scancode)) \
+		tpacpi_hotkey_send_key(__scancode); \
+} while (0)
+
+static void issue_volchange(const unsigned int oldvol,
+			    const unsigned int newvol,
+			    const u32 event_mask)
+{
+	unsigned int i = oldvol;
+
+	while (i > newvol) {
+		TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_VOLUMEDOWN);
+		i--;
+	}
+	while (i < newvol) {
+		TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_VOLUMEUP);
+		i++;
+	}
+}
+
+static void issue_brightnesschange(const unsigned int oldbrt,
+				   const unsigned int newbrt,
+				   const u32 event_mask)
+{
+	unsigned int i = oldbrt;
+
+	while (i > newbrt) {
+		TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_FNEND);
+		i--;
+	}
+	while (i < newbrt) {
+		TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_FNHOME);
+		i++;
+	}
+}
+
 static void hotkey_compare_and_issue_event(struct tp_nvram_state *oldn,
 					   struct tp_nvram_state *newn,
 					   const u32 event_mask)
 {
-
-#define TPACPI_COMPARE_KEY(__scancode, __member) \
-	do { \
-		if ((event_mask & (1 << __scancode)) && \
-		    oldn->__member != newn->__member) \
-			tpacpi_hotkey_send_key(__scancode); \
-	} while (0)
-
-#define TPACPI_MAY_SEND_KEY(__scancode) \
-	do { \
-		if (event_mask & (1 << __scancode)) \
-			tpacpi_hotkey_send_key(__scancode); \
-	} while (0)
-
-	void issue_volchange(const unsigned int oldvol,
-			     const unsigned int newvol)
-	{
-		unsigned int i = oldvol;
-
-		while (i > newvol) {
-			TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_VOLUMEDOWN);
-			i--;
-		}
-		while (i < newvol) {
-			TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_VOLUMEUP);
-			i++;
-		}
-	}
-
-	void issue_brightnesschange(const unsigned int oldbrt,
-				    const unsigned int newbrt)
-	{
-		unsigned int i = oldbrt;
-
-		while (i > newbrt) {
-			TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_FNEND);
-			i--;
-		}
-		while (i < newbrt) {
-			TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_FNHOME);
-			i++;
-		}
-	}
 
 	TPACPI_COMPARE_KEY(TP_ACPI_HOTKEYSCAN_THINKPAD, thinkpad_toggle);
 	TPACPI_COMPARE_KEY(TP_ACPI_HOTKEYSCAN_FNSPACE, zoom_toggle);
@@ -2408,7 +2402,8 @@ static void hotkey_compare_and_issue_event(struct tp_nvram_state *oldn,
 		    oldn->volume_level != newn->volume_level) {
 			/* recently muted, or repeated mute keypress, or
 			 * multiple presses ending in mute */
-			issue_volchange(oldn->volume_level, newn->volume_level);
+			issue_volchange(oldn->volume_level, newn->volume_level,
+				event_mask);
 			TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_MUTE);
 		}
 	} else {
@@ -2418,7 +2413,8 @@ static void hotkey_compare_and_issue_event(struct tp_nvram_state *oldn,
 			TPACPI_MAY_SEND_KEY(TP_ACPI_HOTKEYSCAN_VOLUMEUP);
 		}
 		if (oldn->volume_level != newn->volume_level) {
-			issue_volchange(oldn->volume_level, newn->volume_level);
+			issue_volchange(oldn->volume_level, newn->volume_level,
+				event_mask);
 		} else if (oldn->volume_toggle != newn->volume_toggle) {
 			/* repeated vol up/down keypress at end of scale ? */
 			if (newn->volume_level == 0)
@@ -2431,7 +2427,7 @@ static void hotkey_compare_and_issue_event(struct tp_nvram_state *oldn,
 	/* handle brightness */
 	if (oldn->brightness_level != newn->brightness_level) {
 		issue_brightnesschange(oldn->brightness_level,
-				       newn->brightness_level);
+				       newn->brightness_level, event_mask);
 	} else if (oldn->brightness_toggle != newn->brightness_toggle) {
 		/* repeated key presses that didn't change state */
 		if (newn->brightness_level == 0)
@@ -3173,8 +3169,10 @@ static int __init hotkey_init(struct ibm_init_struct *iibm)
 		KEY_MICMUTE,	/* 0x1a: Mic mute (since ?400 or so) */
 
 		/* (assignments unknown, please report if found) */
-		KEY_UNKNOWN, KEY_UNKNOWN, KEY_UNKNOWN, KEY_UNKNOWN,
 		KEY_UNKNOWN,
+
+		/* Extra keys in use since the X240 / T440 / T540 */
+		KEY_CONFIG, KEY_SEARCH, KEY_SCALE, KEY_FILE,
 		},
 	};
 
@@ -3440,7 +3438,107 @@ err_exit:
 	delete_attr_set(hotkey_dev_attributes, &tpacpi_pdev->dev.kobj);
 	hotkey_dev_attributes = NULL;
 
-	return (res < 0)? res : 1;
+	return (res < 0) ? res : 1;
+}
+
+/* Thinkpad X1 Carbon support 5 modes including Home mode, Web browser
+ * mode, Web conference mode, Function mode and Lay-flat mode.
+ * We support Home mode and Function mode currently.
+ *
+ * Will consider support rest of modes in future.
+ *
+ */
+enum ADAPTIVE_KEY_MODE {
+	HOME_MODE,
+	WEB_BROWSER_MODE,
+	WEB_CONFERENCE_MODE,
+	FUNCTION_MODE,
+	LAYFLAT_MODE
+};
+
+const int adaptive_keyboard_modes[] = {
+	HOME_MODE,
+/*	WEB_BROWSER_MODE = 2,
+	WEB_CONFERENCE_MODE = 3, */
+	FUNCTION_MODE
+};
+
+#define DFR_CHANGE_ROW			0x101
+#define DFR_SHOW_QUICKVIEW_ROW		0x102
+
+/* press Fn key a while second, it will switch to Function Mode. Then
+ * release Fn key, previous mode be restored.
+ */
+static bool adaptive_keyboard_mode_is_saved;
+static int adaptive_keyboard_prev_mode;
+
+static int adaptive_keyboard_get_next_mode(int mode)
+{
+	size_t i;
+	size_t max_mode = ARRAY_SIZE(adaptive_keyboard_modes) - 1;
+
+	for (i = 0; i <= max_mode; i++) {
+		if (adaptive_keyboard_modes[i] == mode)
+			break;
+	}
+
+	if (i >= max_mode)
+		i = 0;
+	else
+		i++;
+
+	return adaptive_keyboard_modes[i];
+}
+
+static bool adaptive_keyboard_hotkey_notify_hotkey(unsigned int scancode)
+{
+	u32 current_mode = 0;
+	int new_mode = 0;
+
+	switch (scancode) {
+	case DFR_CHANGE_ROW:
+		if (adaptive_keyboard_mode_is_saved) {
+			new_mode = adaptive_keyboard_prev_mode;
+			adaptive_keyboard_mode_is_saved = false;
+		} else {
+			if (!acpi_evalf(
+					hkey_handle, &current_mode,
+					"GTRW", "dd", 0)) {
+				pr_err("Cannot read adaptive keyboard mode\n");
+				return false;
+			} else {
+				new_mode = adaptive_keyboard_get_next_mode(
+						current_mode);
+			}
+		}
+
+		if (!acpi_evalf(hkey_handle, NULL, "STRW", "vd", new_mode)) {
+			pr_err("Cannot set adaptive keyboard mode\n");
+			return false;
+		}
+
+		return true;
+
+	case DFR_SHOW_QUICKVIEW_ROW:
+		if (!acpi_evalf(hkey_handle,
+				&adaptive_keyboard_prev_mode,
+				"GTRW", "dd", 0)) {
+			pr_err("Cannot read adaptive keyboard mode\n");
+			return false;
+		} else {
+			adaptive_keyboard_mode_is_saved = true;
+
+			if (!acpi_evalf(hkey_handle,
+					NULL, "STRW", "vd", FUNCTION_MODE)) {
+				pr_err("Cannot set adaptive keyboard mode\n");
+				return false;
+			}
+		}
+		return true;
+
+	default:
+		return false;
+	}
 }
 
 static bool hotkey_notify_hotkey(const u32 hkey,
@@ -3462,6 +3560,8 @@ static bool hotkey_notify_hotkey(const u32 hkey,
 			*ignore_acpi_ev = true;
 		}
 		return true;
+	} else {
+		return adaptive_keyboard_hotkey_notify_hotkey(scancode);
 	}
 	return false;
 }
@@ -3734,13 +3834,28 @@ static void hotkey_notify(struct ibm_struct *ibm, u32 event)
 
 static void hotkey_suspend(void)
 {
+	int hkeyv;
+
 	/* Do these on suspend, we get the events on early resume! */
 	hotkey_wakeup_reason = TP_ACPI_WAKEUP_NONE;
 	hotkey_autosleep_ack = 0;
+
+	/* save previous mode of adaptive keyboard of X1 Carbon */
+	if (acpi_evalf(hkey_handle, &hkeyv, "MHKV", "qd")) {
+		if ((hkeyv >> 8) == 2) {
+			if (!acpi_evalf(hkey_handle,
+						&adaptive_keyboard_prev_mode,
+						"GTRW", "dd", 0)) {
+				pr_err("Cannot read adaptive keyboard mode.\n");
+			}
+		}
+	}
 }
 
 static void hotkey_resume(void)
 {
+	int hkeyv;
+
 	tpacpi_disable_brightness_delay();
 
 	if (hotkey_status_set(true) < 0 ||
@@ -3753,6 +3868,18 @@ static void hotkey_resume(void)
 	hotkey_wakeup_reason_notify_change();
 	hotkey_wakeup_hotunplug_complete_notify_change();
 	hotkey_poll_setup_safe(false);
+
+	/* restore previous mode of adapive keyboard of X1 Carbon */
+	if (acpi_evalf(hkey_handle, &hkeyv, "MHKV", "qd")) {
+		if ((hkeyv >> 8) == 2) {
+			if (!acpi_evalf(hkey_handle,
+						NULL,
+						"STRW", "vd",
+						adaptive_keyboard_prev_mode)) {
+				pr_err("Cannot set adaptive keyboard mode.\n");
+			}
+		}
+	}
 }
 
 /* procfs -------------------------------------------------------------- */
@@ -4447,7 +4574,7 @@ static int __init video_init(struct ibm_init_struct *iibm)
 		str_supported(video_supported != TPACPI_VIDEO_NONE),
 		video_supported);
 
-	return (video_supported != TPACPI_VIDEO_NONE)? 0 : 1;
+	return (video_supported != TPACPI_VIDEO_NONE) ? 0 : 1;
 }
 
 static void video_exit(void)
@@ -4540,7 +4667,7 @@ static int video_outputsw_set(int status)
 		return -ENOSYS;
 	}
 
-	return (res)? 0 : -EIO;
+	return (res) ? 0 : -EIO;
 }
 
 static int video_autosw_get(void)
@@ -4566,7 +4693,7 @@ static int video_autosw_get(void)
 
 static int video_autosw_set(int enable)
 {
-	if (!acpi_evalf(vid_handle, NULL, "_DOS", "vd", (enable)? 1 : 0))
+	if (!acpi_evalf(vid_handle, NULL, "_DOS", "vd", (enable) ? 1 : 0))
 		return -EIO;
 	return 0;
 }
@@ -4601,20 +4728,20 @@ static int video_outputsw_cycle(void)
 		return -EIO;
 	}
 
-	return (res)? 0 : -EIO;
+	return (res) ? 0 : -EIO;
 }
 
 static int video_expand_toggle(void)
 {
 	switch (video_supported) {
 	case TPACPI_VIDEO_570:
-		return acpi_evalf(ec_handle, NULL, "_Q17", "v")?
+		return acpi_evalf(ec_handle, NULL, "_Q17", "v") ?
 			0 : -EIO;
 	case TPACPI_VIDEO_770:
-		return acpi_evalf(vid_handle, NULL, "VEXP", "v")?
+		return acpi_evalf(vid_handle, NULL, "VEXP", "v") ?
 			0 : -EIO;
 	case TPACPI_VIDEO_NEW:
-		return acpi_evalf(NULL, NULL, "\\VEXP", "v")?
+		return acpi_evalf(NULL, NULL, "\\VEXP", "v") ?
 			0 : -EIO;
 	default:
 		return -ENOSYS;
@@ -4758,14 +4885,14 @@ static int light_set_status(int status)
 	if (tp_features.light) {
 		if (cmos_handle) {
 			rc = acpi_evalf(cmos_handle, NULL, NULL, "vd",
-					(status)?
+					(status) ?
 						TP_CMOS_THINKLIGHT_ON :
 						TP_CMOS_THINKLIGHT_OFF);
 		} else {
 			rc = acpi_evalf(lght_handle, NULL, NULL, "vd",
-					(status)? 1 : 0);
+					(status) ? 1 : 0);
 		}
-		return (rc)? 0 : -EIO;
+		return (rc) ? 0 : -EIO;
 	}
 
 	return -ENXIO;
@@ -4794,7 +4921,7 @@ static void light_sysfs_set(struct led_classdev *led_cdev,
 
 static enum led_brightness light_sysfs_get(struct led_classdev *led_cdev)
 {
-	return (light_get_status() == 1)? LED_FULL : LED_OFF;
+	return (light_get_status() == 1) ? LED_FULL : LED_OFF;
 }
 
 static struct tpacpi_led_classdev tpacpi_led_thinklight = {
@@ -4916,7 +5043,7 @@ static ssize_t cmos_command_store(struct device *dev,
 		return -EINVAL;
 
 	res = issue_thinkpad_cmos_command(cmos_cmd);
-	return (res)? res : count;
+	return (res) ? res : count;
 }
 
 static struct device_attribute dev_attr_cmos_command =
@@ -4940,7 +5067,7 @@ static int __init cmos_init(struct ibm_init_struct *iibm)
 	if (res)
 		return res;
 
-	return (cmos_handle)? 0 : 1;
+	return (cmos_handle) ? 0 : 1;
 }
 
 static void cmos_exit(void)
@@ -5050,9 +5177,9 @@ static int led_get_status(const unsigned int led)
 		if (!acpi_evalf(ec_handle,
 				&status, "GLED", "dd", 1 << led))
 			return -EIO;
-		led_s = (status == 0)?
+		led_s = (status == 0) ?
 				TPACPI_LED_OFF :
-				((status == 1)?
+				((status == 1) ?
 					TPACPI_LED_ON :
 					TPACPI_LED_BLINK);
 		tpacpi_led_state_cache[led] = led_s;
@@ -5449,7 +5576,7 @@ static int __init beep_init(struct ibm_init_struct *iibm)
 
 	tp_features.beep_needs_two_args = !!(quirks & TPACPI_BEEP_Q1);
 
-	return (beep_handle)? 0 : 1;
+	return (beep_handle) ? 0 : 1;
 }
 
 static int beep_read(struct seq_file *m)
@@ -6015,7 +6142,7 @@ static int brightness_set(unsigned int value)
 {
 	int res;
 
-	if (value > bright_maxlvl || value < 0)
+	if (value > bright_maxlvl)
 		return -EINVAL;
 
 	vdbg_printk(TPACPI_DBG_BRGHT,
@@ -6398,7 +6525,7 @@ static int brightness_write(char *buf)
 	if (!rc && ibm_backlight_device)
 		backlight_force_update(ibm_backlight_device,
 					BACKLIGHT_UPDATE_SYSFS);
-	return (rc == -EINTR)? -ERESTARTSYS : rc;
+	return (rc == -EINTR) ? -ERESTARTSYS : rc;
 }
 
 static struct ibm_struct brightness_driver_data = {
@@ -6430,6 +6557,17 @@ static struct ibm_struct brightness_driver_data = {
  * bits 3-0 (volume).  Other bits in NVRAM may have other functions,
  * such as bit 7 which is used to detect repeated presses of MUTE,
  * and we leave them unchanged.
+ *
+ * On newer Lenovo ThinkPads, the EC can automatically change the volume
+ * in response to user input.  Unfortunately, this rarely works well.
+ * The laptop changes the state of its internal MUTE gate and, on some
+ * models, sends KEY_MUTE, causing any user code that responds to the
+ * mute button to get confused.  The hardware MUTE gate is also
+ * unnecessary, since user code can handle the mute button without
+ * kernel or EC help.
+ *
+ * To avoid confusing userspace, we simply disable all EC-based mute
+ * and volume controls when possible.
  */
 
 #ifdef CONFIG_THINKPAD_ACPI_ALSA_SUPPORT
@@ -6484,11 +6622,21 @@ enum tpacpi_volume_capabilities {
 	TPACPI_VOL_CAP_MAX
 };
 
+enum tpacpi_mute_btn_mode {
+	TP_EC_MUTE_BTN_LATCH  = 0,	/* Mute mutes; up/down unmutes */
+	/* We don't know what mode 1 is. */
+	TP_EC_MUTE_BTN_NONE   = 2,	/* Mute and up/down are just keys */
+	TP_EC_MUTE_BTN_TOGGLE = 3,	/* Mute toggles; up/down unmutes */
+};
+
 static enum tpacpi_volume_access_mode volume_mode =
 	TPACPI_VOL_MODE_MAX;
 
 static enum tpacpi_volume_capabilities volume_capabilities;
 static bool volume_control_allowed;
+static bool software_mute_requested = true;
+static bool software_mute_active;
+static int software_mute_orig_mode;
 
 /*
  * Used to syncronize writers to TP_EC_AUDIO and
@@ -6505,6 +6653,8 @@ static void tpacpi_volume_checkpoint_nvram(void)
 	if (volume_mode != TPACPI_VOL_MODE_ECNVRAM)
 		return;
 	if (!volume_control_allowed)
+		return;
+	if (software_mute_active)
 		return;
 
 	vdbg_printk(TPACPI_DBG_MIXER,
@@ -6566,6 +6716,12 @@ static int volume_set_status_ec(const u8 status)
 		return -EIO;
 
 	dbg_printk(TPACPI_DBG_MIXER, "set EC mixer to 0x%02x\n", status);
+
+	/*
+	 * On X200s, and possibly on others, it can take a while for
+	 * reads to become correct.
+	 */
+	msleep(1);
 
 	return 0;
 }
@@ -6647,6 +6803,57 @@ static int __volume_set_volume_ec(const u8 vol)
 unlock:
 	mutex_unlock(&volume_mutex);
 	return rc;
+}
+
+static int volume_set_software_mute(bool startup)
+{
+	int result;
+
+	if (!tpacpi_is_lenovo())
+		return -ENODEV;
+
+	if (startup) {
+		if (!acpi_evalf(ec_handle, &software_mute_orig_mode,
+				"HAUM", "qd"))
+			return -EIO;
+
+		dbg_printk(TPACPI_DBG_INIT | TPACPI_DBG_MIXER,
+			    "Initial HAUM setting was %d\n",
+			    software_mute_orig_mode);
+	}
+
+	if (!acpi_evalf(ec_handle, &result, "SAUM", "qdd",
+			(int)TP_EC_MUTE_BTN_NONE))
+		return -EIO;
+
+	if (result != TP_EC_MUTE_BTN_NONE)
+		pr_warn("Unexpected SAUM result %d\n",
+			result);
+
+	/*
+	 * In software mute mode, the standard codec controls take
+	 * precendence, so we unmute the ThinkPad HW switch at
+	 * startup.  Just on case there are SAUM-capable ThinkPads
+	 * with level controls, set max HW volume as well.
+	 */
+	if (tp_features.mixer_no_level_control)
+		result = volume_set_mute(false);
+	else
+		result = volume_set_status(TP_EC_VOLUME_MAX);
+
+	if (result != 0)
+		pr_warn("Failed to unmute the HW mute switch\n");
+
+	return 0;
+}
+
+static void volume_exit_software_mute(void)
+{
+	int r;
+
+	if (!acpi_evalf(ec_handle, &r, "SAUM", "qdd", software_mute_orig_mode)
+	    || r != software_mute_orig_mode)
+		pr_warn("Failed to restore mute mode\n");
 }
 
 static int volume_alsa_set_volume(const u8 vol)
@@ -6731,7 +6938,7 @@ static int volume_alsa_mute_put(struct snd_kcontrol *kcontrol,
 	return volume_alsa_set_mute(!ucontrol->value.integer.value[0]);
 }
 
-static struct snd_kcontrol_new volume_alsa_control_vol = {
+static struct snd_kcontrol_new volume_alsa_control_vol __initdata = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Console Playback Volume",
 	.index = 0,
@@ -6740,7 +6947,7 @@ static struct snd_kcontrol_new volume_alsa_control_vol = {
 	.get = volume_alsa_vol_get,
 };
 
-static struct snd_kcontrol_new volume_alsa_control_mute = {
+static struct snd_kcontrol_new volume_alsa_control_mute __initdata = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Console Playback Switch",
 	.index = 0,
@@ -6756,7 +6963,12 @@ static void volume_suspend(void)
 
 static void volume_resume(void)
 {
-	volume_alsa_notify_change();
+	if (software_mute_active) {
+		if (volume_set_software_mute(false) < 0)
+			pr_warn("Failed to restore software mute\n");
+	} else {
+		volume_alsa_notify_change();
+	}
 }
 
 static void volume_shutdown(void)
@@ -6772,6 +6984,9 @@ static void volume_exit(void)
 	}
 
 	tpacpi_volume_checkpoint_nvram();
+
+	if (software_mute_active)
+		volume_exit_software_mute();
 }
 
 static int __init volume_create_alsa_mixer(void)
@@ -6782,8 +6997,9 @@ static int __init volume_create_alsa_mixer(void)
 	struct snd_kcontrol *ctl_mute;
 	int rc;
 
-	rc = snd_card_create(alsa_index, alsa_id, THIS_MODULE,
-			    sizeof(struct tpacpi_alsa_data), &card);
+	rc = snd_card_new(&tpacpi_pdev->dev,
+			  alsa_index, alsa_id, THIS_MODULE,
+			  sizeof(struct tpacpi_alsa_data), &card);
 	if (rc < 0 || !card) {
 		pr_err("Failed to create ALSA card structures: %d\n", rc);
 		return 1;
@@ -6834,7 +7050,6 @@ static int __init volume_create_alsa_mixer(void)
 	}
 	data->ctl_mute_id = &ctl_mute->id;
 
-	snd_card_set_dev(card, &tpacpi_pdev->dev);
 	rc = snd_card_register(card);
 	if (rc < 0) {
 		pr_err("Failed to register ALSA card: %d\n", rc);
@@ -6956,16 +7171,20 @@ static int __init volume_init(struct ibm_init_struct *iibm)
 			"mute is supported, volume control is %s\n",
 			str_supported(!tp_features.mixer_no_level_control));
 
-	rc = volume_create_alsa_mixer();
-	if (rc) {
-		pr_err("Could not create the ALSA mixer interface\n");
-		return rc;
-	}
+	if (software_mute_requested && volume_set_software_mute(true) == 0) {
+		software_mute_active = true;
+	} else {
+		rc = volume_create_alsa_mixer();
+		if (rc) {
+			pr_err("Could not create the ALSA mixer interface\n");
+			return rc;
+		}
 
-	pr_info("Console audio control enabled, mode: %s\n",
-		(volume_control_allowed) ?
-			"override (read/write)" :
-			"monitor (read only)");
+		pr_info("Console audio control enabled, mode: %s\n",
+			(volume_control_allowed) ?
+				"override (read/write)" :
+				"monitor (read only)");
+	}
 
 	vdbg_printk(TPACPI_DBG_INIT | TPACPI_DBG_MIXER,
 		"registering volume hotkeys as change notification\n");
@@ -7855,7 +8074,7 @@ static ssize_t fan_pwm1_store(struct device *dev,
 	}
 
 	mutex_unlock(&fan_mutex);
-	return (rc)? rc : count;
+	return (rc) ? rc : count;
 }
 
 static struct device_attribute dev_attr_fan_pwm1 =
@@ -8453,9 +8672,21 @@ static void mute_led_exit(void)
 		tpacpi_led_set(i, false);
 }
 
+static void mute_led_resume(void)
+{
+	int i;
+
+	for (i = 0; i < TPACPI_LED_MAX; i++) {
+		struct tp_led_table *t = &led_tables[i];
+		if (t->state >= 0)
+			mute_led_on_off(t, t->state);
+	}
+}
+
 static struct ibm_struct mute_led_driver_data = {
 	.name = "mute_led",
 	.exit = mute_led_exit,
+	.resume = mute_led_resume,
 };
 
 /****************************************************************************
@@ -8521,7 +8752,7 @@ static const char * __init str_supported(int is_supported)
 {
 	static char text_unsupported[] __initdata = "not supported";
 
-	return (is_supported)? &text_unsupported[4] : &text_unsupported[0];
+	return (is_supported) ? &text_unsupported[4] : &text_unsupported[0];
 }
 #endif /* CONFIG_THINKPAD_ACPI_DEBUG */
 
@@ -8642,7 +8873,7 @@ err_out:
 		ibm->name, ret);
 
 	ibm_exit(ibm);
-	return (ret < 0)? ret : 0;
+	return (ret < 0) ? ret : 0;
 }
 
 /* Probing */
@@ -8653,7 +8884,7 @@ static bool __pure __init tpacpi_is_fw_digit(const char c)
 }
 
 /* Most models: xxyTkkWW (#.##c); Ancient 570/600 and -SL lacks (#.##c) */
-static bool __pure __init tpacpi_is_valid_fw_id(const char* const s,
+static bool __pure __init tpacpi_is_valid_fw_id(const char * const s,
 						const char t)
 {
 	return s && strlen(s) >= 8 &&
@@ -8737,13 +8968,13 @@ static int __must_check __init get_thinkpad_model_data(
 	}
 
 	s = dmi_get_system_info(DMI_PRODUCT_VERSION);
-	if (s && !(strnicmp(s, "ThinkPad", 8) && strnicmp(s, "Lenovo", 6))) {
+	if (s && !(strncasecmp(s, "ThinkPad", 8) && strncasecmp(s, "Lenovo", 6))) {
 		tp->model_str = kstrdup(s, GFP_KERNEL);
 		if (!tp->model_str)
 			return -ENOMEM;
 	} else {
 		s = dmi_get_system_info(DMI_BIOS_VENDOR);
-		if (s && !(strnicmp(s, "Lenovo", 6))) {
+		if (s && !(strncasecmp(s, "Lenovo", 6))) {
 			tp->model_str = kstrdup(s, GFP_KERNEL);
 			if (!tp->model_str)
 				return -ENOMEM;
@@ -8949,6 +9180,10 @@ module_param_named(volume_control, volume_control_allowed, bool, 0444);
 MODULE_PARM_DESC(volume_control,
 		 "Enables software override for the console audio "
 		 "control when true");
+
+module_param_named(software_mute, software_mute_requested, bool, 0444);
+MODULE_PARM_DESC(software_mute,
+		 "Request full software mute control");
 
 /* ALSA module API parameters */
 module_param_named(index, alsa_index, int, 0444);

@@ -18,7 +18,7 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/wireless.h>
-#include <linux/ieee80211.h>
+#include <net/cfg80211.h>
 #include <net/iw_handler.h>
 #include <linux/string.h>
 #include <linux/if_arp.h>
@@ -65,6 +65,8 @@ static int zd1201_fw_upload(struct usb_device *dev, int apfw)
 
 	err = request_firmware(&fw_entry, fwfile, &dev->dev);
 	if (err) {
+		dev_err(&dev->dev, "Failed to load %s firmware file!\n", fwfile);
+		dev_err(&dev->dev, "Make sure the hotplug firmware loader is installed.\n");
 		dev_err(&dev->dev, "Goto http://linux-lc100020.sourceforge.net for more info.\n");
 		return err;
 	}
@@ -912,11 +914,8 @@ static int zd1201_set_freq(struct net_device *dev,
 
 	if (freq->e == 0)
 		channel = freq->m;
-	else {
-		channel = ieee80211_freq_to_dsss_chan(freq->m);
-		if (channel < 0)
-			channel = 0;
-	}
+	else
+		channel = ieee80211_frequency_to_channel(freq->m);
 
 	err = zd1201_setconfig16(zd, ZD1201_RID_CNFOWNCHANNEL, channel);
 	if (err)

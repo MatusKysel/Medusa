@@ -543,8 +543,10 @@ static int sscape_upload_bootblock(struct snd_card *card)
 	int ret;
 
 	ret = request_firmware(&init_fw, "scope.cod", card->dev);
-	if (ret)
+	if (ret < 0) {
+		snd_printk(KERN_ERR "sscape: Error loading scope.cod");
 		return ret;
+	}
 	ret = upload_dma_data(sscape, init_fw->data, init_fw->size);
 
 	release_firmware(init_fw);
@@ -581,8 +583,11 @@ static int sscape_upload_microcode(struct snd_card *card, int version)
 	snprintf(name, sizeof(name), "sndscape.co%d", version);
 
 	err = request_firmware(&init_fw, name, card->dev);
-	if (err)
+	if (err < 0) {
+		snd_printk(KERN_ERR "sscape: Error loading sndscape.co%d",
+				version);
 		return err;
+	}
 	err = upload_dma_data(sscape, init_fw->data, init_fw->size);
 	if (err == 0)
 		snd_printk(KERN_INFO "sscape: MIDI firmware loaded %d KBs\n",
@@ -1164,8 +1169,8 @@ static int snd_sscape_probe(struct device *pdev, unsigned int dev)
 	struct soundscape *sscape;
 	int ret;
 
-	ret = snd_card_create(index[dev], id[dev], THIS_MODULE,
-			      sizeof(struct soundscape), &card);
+	ret = snd_card_new(pdev, index[dev], id[dev], THIS_MODULE,
+			   sizeof(struct soundscape), &card);
 	if (ret < 0)
 		return ret;
 
@@ -1173,7 +1178,6 @@ static int snd_sscape_probe(struct device *pdev, unsigned int dev)
 	sscape->type = SSCAPE;
 
 	dma[dev] &= 0x03;
-	snd_card_set_dev(card, pdev);
 
 	ret = create_sscape(dev, card);
 	if (ret < 0)
@@ -1254,8 +1258,9 @@ static int sscape_pnp_detect(struct pnp_card_link *pcard,
 	 * Create a new ALSA sound card entry, in anticipation
 	 * of detecting our hardware ...
 	 */
-	ret = snd_card_create(index[idx], id[idx], THIS_MODULE,
-			      sizeof(struct soundscape), &card);
+	ret = snd_card_new(&pcard->card->dev,
+			   index[idx], id[idx], THIS_MODULE,
+			   sizeof(struct soundscape), &card);
 	if (ret < 0)
 		return ret;
 
@@ -1283,7 +1288,6 @@ static int sscape_pnp_detect(struct pnp_card_link *pcard,
 		wss_port[idx] = pnp_port_start(dev, 1);
 		dma2[idx] = pnp_dma(dev, 1);
 	}
-	snd_card_set_dev(card, &pcard->card->dev);
 
 	ret = create_sscape(idx, card);
 	if (ret < 0)

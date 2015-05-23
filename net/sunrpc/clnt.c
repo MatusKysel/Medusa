@@ -42,7 +42,7 @@
 #include "sunrpc.h"
 #include "netns.h"
 
-#ifdef RPC_DEBUG
+#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
 # define RPCDBG_FACILITY	RPCDBG_CALL
 #endif
 
@@ -305,6 +305,10 @@ static int rpc_client_register(struct rpc_clnt *clnt,
 	struct super_block *pipefs_sb;
 	int err;
 
+	err = rpc_clnt_debugfs_register(clnt);
+	if (err)
+		return err;
+
 	pipefs_sb = rpc_get_sb_net(net);
 	if (pipefs_sb) {
 		err = rpc_setup_pipedir(pipefs_sb, clnt);
@@ -331,6 +335,7 @@ err_auth:
 out:
 	if (pipefs_sb)
 		rpc_put_sb_net(net);
+	rpc_clnt_debugfs_unregister(clnt);
 	return err;
 }
 
@@ -438,6 +443,40 @@ out_no_rpciod:
 	return ERR_PTR(err);
 }
 
+struct rpc_clnt *rpc_create_xprt(struct rpc_create_args *args,
+					struct rpc_xprt *xprt)
+{
+	struct rpc_clnt *clnt = NULL;
+
+	clnt = rpc_new_client(args, xprt, NULL);
+	if (IS_ERR(clnt))
+		return clnt;
+
+	if (!(args->flags & RPC_CLNT_CREATE_NOPING)) {
+		int err = rpc_ping(clnt);
+		if (err != 0) {
+			rpc_shutdown_client(clnt);
+			return ERR_PTR(err);
+		}
+	}
+
+	clnt->cl_softrtry = 1;
+	if (args->flags & RPC_CLNT_CREATE_HARDRTRY)
+		clnt->cl_softrtry = 0;
+
+	if (args->flags & RPC_CLNT_CREATE_AUTOBIND)
+		clnt->cl_autobind = 1;
+	if (args->flags & RPC_CLNT_CREATE_NO_RETRANS_TIMEOUT)
+		clnt->cl_noretranstimeo = 1;
+	if (args->flags & RPC_CLNT_CREATE_DISCRTRY)
+		clnt->cl_discrtry = 1;
+	if (!(args->flags & RPC_CLNT_CREATE_QUIET))
+		clnt->cl_chatty = 1;
+
+	return clnt;
+}
+EXPORT_SYMBOL_GPL(rpc_create_xprt);
+
 /**
  * rpc_create - create an RPC client and transport with one call
  * @args: rpc_clnt create argument structure
@@ -451,7 +490,6 @@ out_no_rpciod:
 struct rpc_clnt *rpc_create(struct rpc_create_args *args)
 {
 	struct rpc_xprt *xprt;
-	struct rpc_clnt *clnt;
 	struct xprt_create xprtargs = {
 		.net = args->net,
 		.ident = args->protocol,
@@ -515,30 +553,7 @@ struct rpc_clnt *rpc_create(struct rpc_create_args *args)
 	if (args->flags & RPC_CLNT_CREATE_NONPRIVPORT)
 		xprt->resvport = 0;
 
-	clnt = rpc_new_client(args, xprt, NULL);
-	if (IS_ERR(clnt))
-		return clnt;
-
-	if (!(args->flags & RPC_CLNT_CREATE_NOPING)) {
-		int err = rpc_ping(clnt);
-		if (err != 0) {
-			rpc_shutdown_client(clnt);
-			return ERR_PTR(err);
-		}
-	}
-
-	clnt->cl_softrtry = 1;
-	if (args->flags & RPC_CLNT_CREATE_HARDRTRY)
-		clnt->cl_softrtry = 0;
-
-	if (args->flags & RPC_CLNT_CREATE_AUTOBIND)
-		clnt->cl_autobind = 1;
-	if (args->flags & RPC_CLNT_CREATE_DISCRTRY)
-		clnt->cl_discrtry = 1;
-	if (!(args->flags & RPC_CLNT_CREATE_QUIET))
-		clnt->cl_chatty = 1;
-
-	return clnt;
+	return rpc_create_xprt(args, xprt);
 }
 EXPORT_SYMBOL_GPL(rpc_create);
 
@@ -571,6 +586,7 @@ static struct rpc_clnt *__rpc_clone_client(struct rpc_create_args *args,
 	/* Turn off autobind on clones */
 	new->cl_autobind = 0;
 	new->cl_softrtry = clnt->cl_softrtry;
+	new->cl_noretranstimeo = clnt->cl_noretranstimeo;
 	new->cl_discrtry = clnt->cl_discrtry;
 	new->cl_chatty = clnt->cl_chatty;
 	return new;
@@ -659,6 +675,7 @@ int rpc_switch_client_transport(struct rpc_clnt *clnt,
 
 	rpc_unregister_client(clnt);
 	__rpc_clnt_remove_pipedir(clnt);
+	rpc_clnt_debugfs_unregister(clnt);
 
 	/*
 	 * A new transport was created.  "clnt" therefore
@@ -760,6 +777,7 @@ rpc_free_client(struct rpc_clnt *clnt)
 			rcu_dereference(clnt->cl_xprt)->servername);
 	if (clnt->cl_parent != clnt)
 		parent = clnt->cl_parent;
+	rpc_clnt_debugfs_unregister(clnt);
 	rpc_clnt_remove_pipedir(clnt);
 	rpc_unregister_client(clnt);
 	rpc_free_iostats(clnt->cl_metrics);
@@ -1363,6 +1381,7 @@ rpc_restart_call_prepare(struct rpc_task *task)
 	if (RPC_ASSASSINATED(task))
 		return 0;
 	task->tk_action = call_start;
+	task->tk_status = 0;
 	if (task->tk_ops->rpc_call_prepare != NULL)
 		task->tk_action = rpc_prepare_task;
 	return 1;
@@ -1379,12 +1398,14 @@ rpc_restart_call(struct rpc_task *task)
 	if (RPC_ASSASSINATED(task))
 		return 0;
 	task->tk_action = call_start;
+	task->tk_status = 0;
 	return 1;
 }
 EXPORT_SYMBOL_GPL(rpc_restart_call);
 
-#ifdef RPC_DEBUG
-static const char *rpc_proc_name(const struct rpc_task *task)
+#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
+const char
+*rpc_proc_name(const struct rpc_task *task)
 {
 	const struct rpc_procinfo *proc = task->tk_msg.rpc_proc;
 
@@ -1728,15 +1749,15 @@ call_bind_status(struct rpc_task *task)
 	case -EPROTONOSUPPORT:
 		dprintk("RPC: %5u remote rpcbind version unavailable, retrying\n",
 				task->tk_pid);
-		task->tk_status = 0;
-		task->tk_action = call_bind;
-		return;
+		goto retry_timeout;
 	case -ECONNREFUSED:		/* connection problems */
 	case -ECONNRESET:
+	case -ECONNABORTED:
 	case -ENOTCONN:
 	case -EHOSTDOWN:
 	case -EHOSTUNREACH:
 	case -ENETUNREACH:
+	case -ENOBUFS:
 	case -EPIPE:
 		dprintk("RPC: %5u remote rpcbind unreachable: %d\n",
 				task->tk_pid, task->tk_status);
@@ -1755,6 +1776,7 @@ call_bind_status(struct rpc_task *task)
 	return;
 
 retry_timeout:
+	task->tk_status = 0;
 	task->tk_action = call_timeout;
 }
 
@@ -1797,19 +1819,21 @@ call_connect_status(struct rpc_task *task)
 	trace_rpc_connect_status(task, status);
 	task->tk_status = 0;
 	switch (status) {
-		/* if soft mounted, test if we've timed out */
-	case -ETIMEDOUT:
-		task->tk_action = call_timeout;
-		return;
 	case -ECONNREFUSED:
 	case -ECONNRESET:
+	case -ECONNABORTED:
 	case -ENETUNREACH:
-		/* retry with existing socket, after a delay */
-		rpc_delay(task, 3*HZ);
+	case -EHOSTUNREACH:
+	case -ENOBUFS:
+	case -EPIPE:
 		if (RPC_IS_SOFTCONN(task))
 			break;
+		/* retry with existing socket, after a delay */
+		rpc_delay(task, 3*HZ);
 	case -EAGAIN:
-		task->tk_action = call_bind;
+		/* Check for timeouts before looping back to call_bind */
+	case -ETIMEDOUT:
+		task->tk_action = call_timeout;
 		return;
 	case 0:
 		clnt->cl_stats->netreconn++;
@@ -1900,13 +1924,16 @@ call_transmit_status(struct rpc_task *task)
 	case -EHOSTDOWN:
 	case -EHOSTUNREACH:
 	case -ENETUNREACH:
+	case -EPERM:
 		if (RPC_IS_SOFTCONN(task)) {
 			xprt_end_transmit(task);
 			rpc_exit(task, task->tk_status);
 			break;
 		}
 	case -ECONNRESET:
+	case -ECONNABORTED:
 	case -ENOTCONN:
+	case -ENOBUFS:
 	case -EPIPE:
 		rpc_task_force_reencode(task);
 	}
@@ -2003,6 +2030,11 @@ call_status(struct rpc_task *task)
 	case -EHOSTDOWN:
 	case -EHOSTUNREACH:
 	case -ENETUNREACH:
+	case -EPERM:
+		if (RPC_IS_SOFTCONN(task)) {
+			rpc_exit(task, status);
+			break;
+		}
 		/*
 		 * Delay any retries for 3 seconds, then handle as if it
 		 * were a timeout.
@@ -2015,9 +2047,11 @@ call_status(struct rpc_task *task)
 			xprt_conditional_disconnect(req->rq_xprt,
 					req->rq_connect_cookie);
 		break;
-	case -ECONNRESET:
 	case -ECONNREFUSED:
+	case -ECONNRESET:
+	case -ECONNABORTED:
 		rpc_force_rebind(clnt);
+	case -ENOBUFS:
 		rpc_delay(task, 3*HZ);
 	case -EPIPE:
 	case -ENOTCONN:
@@ -2395,7 +2429,7 @@ struct rpc_task *rpc_call_null(struct rpc_clnt *clnt, struct rpc_cred *cred, int
 }
 EXPORT_SYMBOL_GPL(rpc_call_null);
 
-#ifdef RPC_DEBUG
+#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
 static void rpc_show_header(void)
 {
 	printk(KERN_INFO "-pid- flgs status -client- --rqstp- "

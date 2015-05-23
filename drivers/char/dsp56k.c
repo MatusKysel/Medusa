@@ -140,8 +140,11 @@ static int dsp56k_upload(u_char __user *bin, int len)
 	}
 	err = request_firmware(&fw, fw_name, &pdev->dev);
 	platform_device_unregister(pdev);
-	if (err)
+	if (err) {
+		printk(KERN_ERR "Failed to load image \"%s\" err %d\n",
+		       fw_name, err);
 		return err;
+	}
 	if (fw->size % 3) {
 		printk(KERN_ERR "Bogus length %d in image \"%s\"\n",
 		       fw->size, fw_name);
@@ -380,7 +383,7 @@ static long dsp56k_ioctl(struct file *file, unsigned int cmd,
 			return put_user(status, &hf->status);
 		}
 		case DSP56K_HOST_CMD:
-			if (arg > 31 || arg < 0)
+			if (arg > 31)
 				return -EINVAL;
 			mutex_lock(&dsp56k_mutex);
 			dsp56k_host_interface.cvr = (u_char)((arg & DSP56K_CVR_HV_MASK) |

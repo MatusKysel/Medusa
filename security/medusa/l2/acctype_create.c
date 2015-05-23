@@ -34,7 +34,7 @@ int __init create_acctype_init(void) {
 static medusa_answer_t medusa_do_create(struct dentry * parent, struct dentry *dentry, int mode);
 medusa_answer_t medusa_create(struct dentry *dentry, int mode)
 {
-	struct nameidata ndcurrent, ndupper, ndparent;
+	struct path ndcurrent, ndupper, ndparent;
 	medusa_answer_t retval;
 
 	if (!dentry || IS_ERR(dentry))
@@ -43,23 +43,23 @@ medusa_answer_t medusa_create(struct dentry *dentry, int mode)
 		process_kobj_validate_task(current) <= 0)
 		return MED_OK;
 
-	ndcurrent.path.dentry = dentry;
-	ndcurrent.path.mnt = NULL;
+	ndcurrent.dentry = dentry;
+	ndcurrent.mnt = NULL;
 	medusa_get_upper_and_parent(&ndcurrent,&ndupper,&ndparent);
 
-	if (!MED_MAGIC_VALID(&inode_security(ndparent.path.dentry->d_inode)) &&
-			file_kobj_validate_dentry(ndparent.path.dentry,ndparent.path.mnt) <= 0) {
+	if (!MED_MAGIC_VALID(&inode_security(ndparent.dentry->d_inode)) &&
+			file_kobj_validate_dentry(ndparent.dentry,ndparent.mnt) <= 0) {
 		medusa_put_upper_and_parent(&ndupper, &ndparent);
 		return MED_OK;
 	}
-	if (!VS_INTERSECT(VSS(&task_security(current)),VS(&inode_security(ndparent.path.dentry->d_inode))) ||
-		!VS_INTERSECT(VSW(&task_security(current)),VS(&inode_security(ndparent.path.dentry->d_inode)))
+	if (!VS_INTERSECT(VSS(&task_security(current)),VS(&inode_security(ndparent.dentry->d_inode))) ||
+		!VS_INTERSECT(VSW(&task_security(current)),VS(&inode_security(ndparent.dentry->d_inode)))
 	) {
 		medusa_put_upper_and_parent(&ndupper, &ndparent);
 		return MED_NO;
 	}
-	if (MEDUSA_MONITORED_ACCESS_O(create_access, &inode_security(ndparent.path.dentry->d_inode)))
-		retval = medusa_do_create(ndparent.path.dentry, ndupper.path.dentry, mode);
+	if (MEDUSA_MONITORED_ACCESS_O(create_access, &inode_security(ndparent.dentry->d_inode)))
+		retval = medusa_do_create(ndparent.dentry, ndupper.dentry, mode);
 	else
 		retval = MED_OK;
 	medusa_put_upper_and_parent(&ndupper, &ndparent);

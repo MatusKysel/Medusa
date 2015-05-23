@@ -1252,7 +1252,7 @@ static int wd7000_init(Adapter * host)
 		return 0;
 
 
-	if (request_irq(host->irq, wd7000_intr, IRQF_DISABLED, "wd7000", host)) {
+	if (request_irq(host->irq, wd7000_intr, 0, "wd7000", host)) {
 		printk("wd7000_init: can't get IRQ %d.\n", host->irq);
 		return (0);
 	}
@@ -1653,7 +1653,6 @@ static struct scsi_host_template driver_template = {
 	.can_queue		= WD7000_Q,
 	.this_id		= 7,
 	.sg_tablesize		= WD7000_SG,
-	.cmd_per_lun		= 1,
 	.unchecked_isa_dma	= 1,
 	.use_clustering		= ENABLE_CLUSTERING,
 };

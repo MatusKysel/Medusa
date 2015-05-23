@@ -1469,13 +1469,14 @@ static int usbhsh_start(struct usbhs_priv *priv)
 	ret = usb_add_hcd(hcd, 0, 0);
 	if (ret < 0)
 		return 0;
+	device_wakeup_enable(hcd->self.controller);
 
 	/*
 	 * pipe initialize and enable DCP
 	 */
+	usbhs_fifo_init(priv);
 	usbhs_pipe_init(priv,
 			usbhsh_dma_map_ctrl);
-	usbhs_fifo_init(priv);
 	usbhsh_pipe_init_for_host(priv);
 
 	/*

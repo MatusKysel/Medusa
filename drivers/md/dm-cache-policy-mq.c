@@ -72,7 +72,7 @@ static enum io_pattern iot_pattern(struct io_tracker *t)
 
 static void iot_update_stats(struct io_tracker *t, struct bio *bio)
 {
-	if (bio->bi_sector == from_oblock(t->last_end_oblock) + 1)
+	if (bio->bi_iter.bi_sector == from_oblock(t->last_end_oblock) + 1)
 		t->nr_seq_samples++;
 	else {
 		/*
@@ -87,7 +87,7 @@ static void iot_update_stats(struct io_tracker *t, struct bio *bio)
 		t->nr_rand_samples++;
 	}
 
-	t->last_end_oblock = to_oblock(bio->bi_sector + bio_sectors(bio) - 1);
+	t->last_end_oblock = to_oblock(bio_end_sector(bio) - 1);
 }
 
 static void iot_check_for_pattern_switch(struct io_tracker *t)
@@ -181,24 +181,30 @@ static void queue_shift_down(struct queue *q)
  * Gives us the oldest entry of the lowest popoulated level.  If the first
  * level is emptied then we shift down one level.
  */
-static struct list_head *queue_pop(struct queue *q)
+static struct list_head *queue_peek(struct queue *q)
 {
 	unsigned level;
-	struct list_head *r;
 
 	for (level = 0; level < NR_QUEUE_LEVELS; level++)
-		if (!list_empty(q->qs + level)) {
-			r = q->qs[level].next;
-			list_del(r);
-
-			/* have we just emptied the bottom level? */
-			if (level == 0 && list_empty(q->qs))
-				queue_shift_down(q);
-
-			return r;
-		}
+		if (!list_empty(q->qs + level))
+			return q->qs[level].next;
 
 	return NULL;
+}
+
+static struct list_head *queue_pop(struct queue *q)
+{
+	struct list_head *r = queue_peek(q);
+
+	if (r) {
+		list_del(r);
+
+		/* have we just emptied the bottom level? */
+		if (list_empty(q->qs))
+			queue_shift_down(q);
+	}
+
+	return r;
 }
 
 static struct list_head *list_pop(struct list_head *lh)
@@ -287,9 +293,8 @@ static struct entry *alloc_entry(struct entry_pool *ep)
 static struct entry *alloc_particular_entry(struct entry_pool *ep, dm_cblock_t cblock)
 {
 	struct entry *e = ep->entries + from_cblock(cblock);
-	list_del(&e->list);
 
-	INIT_LIST_HEAD(&e->list);
+	list_del_init(&e->list);
 	INIT_HLIST_NODE(&e->hlist);
 	ep->nr_allocated++;
 
@@ -384,12 +389,9 @@ struct mq_policy {
 	unsigned generation;
 	unsigned generation_period; /* in lookups (will probably change) */
 
-	/*
-	 * Entries in the pre_cache whose hit count passes the promotion
-	 * threshold move to the cache proper.  Working out the correct
-	 * value for the promotion_threshold is crucial to this policy.
-	 */
-	unsigned promote_threshold;
+	unsigned discard_promote_adjustment;
+	unsigned read_promote_adjustment;
+	unsigned write_promote_adjustment;
 
 	/*
 	 * The hash table allows us to quickly find an entry by origin
@@ -399,6 +401,11 @@ struct mq_policy {
 	dm_block_t hash_bits;
 	struct hlist_head *table;
 };
+
+#define DEFAULT_DISCARD_PROMOTE_ADJUSTMENT 1
+#define DEFAULT_READ_PROMOTE_ADJUSTMENT 4
+#define DEFAULT_WRITE_PROMOTE_ADJUSTMENT 8
+#define DISCOURAGE_DEMOTING_DIRTY_THRESHOLD 128
 
 /*----------------------------------------------------------------*/
 
@@ -511,6 +518,12 @@ static struct entry *pop(struct mq_policy *mq, struct queue *q)
 	return e;
 }
 
+static struct entry *peek(struct queue *q)
+{
+	struct list_head *h = queue_peek(q);
+	return h ? container_of(h, struct entry, list) : NULL;
+}
+
 /*
  * Has this entry already been updated?
  */
@@ -563,10 +576,6 @@ static void check_generation(struct mq_policy *mq)
 					break;
 			}
 		}
-
-		mq->promote_threshold = nr ? total / nr : 1;
-		if (mq->promote_threshold * nr < total)
-			mq->promote_threshold++;
 	}
 }
 
@@ -634,6 +643,30 @@ static int demote_cblock(struct mq_policy *mq, dm_oblock_t *oblock)
 }
 
 /*
+ * Entries in the pre_cache whose hit count passes the promotion
+ * threshold move to the cache proper.  Working out the correct
+ * value for the promotion_threshold is crucial to this policy.
+ */
+static unsigned promote_threshold(struct mq_policy *mq)
+{
+	struct entry *e;
+
+	if (any_free_cblocks(mq))
+		return 0;
+
+	e = peek(&mq->cache_clean);
+	if (e)
+		return e->hit_count;
+
+	e = peek(&mq->cache_dirty);
+	if (e)
+		return e->hit_count + DISCOURAGE_DEMOTING_DIRTY_THRESHOLD;
+
+	/* This should never happen */
+	return 0;
+}
+
+/*
  * We modify the basic promotion_threshold depending on the specific io.
  *
  * If the origin block has been discarded then there's no cost to copy it
@@ -642,25 +675,21 @@ static int demote_cblock(struct mq_policy *mq, dm_oblock_t *oblock)
  * We bias towards reads, since they can be demoted at no cost if they
  * haven't been dirtied.
  */
-#define DISCARDED_PROMOTE_THRESHOLD 1
-#define READ_PROMOTE_THRESHOLD 4
-#define WRITE_PROMOTE_THRESHOLD 8
-
 static unsigned adjusted_promote_threshold(struct mq_policy *mq,
 					   bool discarded_oblock, int data_dir)
 {
 	if (data_dir == READ)
-		return mq->promote_threshold + READ_PROMOTE_THRESHOLD;
+		return promote_threshold(mq) + mq->read_promote_adjustment;
 
 	if (discarded_oblock && (any_free_cblocks(mq) || any_clean_cblocks(mq))) {
 		/*
 		 * We don't need to do any copying at all, so give this a
 		 * very low threshold.
 		 */
-		return DISCARDED_PROMOTE_THRESHOLD;
+		return mq->discard_promote_adjustment;
 	}
 
-	return mq->promote_threshold + WRITE_PROMOTE_THRESHOLD;
+	return promote_threshold(mq) + mq->write_promote_adjustment;
 }
 
 static bool should_promote(struct mq_policy *mq, struct entry *e,
@@ -809,7 +838,7 @@ static int no_entry_found(struct mq_policy *mq, dm_oblock_t oblock,
 			  bool can_migrate, bool discarded_oblock,
 			  int data_dir, struct policy_result *result)
 {
-	if (adjusted_promote_threshold(mq, discarded_oblock, data_dir) == 1) {
+	if (adjusted_promote_threshold(mq, discarded_oblock, data_dir) <= 1) {
 		if (can_migrate)
 			insert_in_cache(mq, oblock, result);
 		else
@@ -836,7 +865,8 @@ static int map(struct mq_policy *mq, dm_oblock_t oblock,
 	if (e && in_cache(mq, e))
 		r = cache_entry_found(mq, e, result);
 
-	else if (iot_pattern(&mq->tracker) == PATTERN_SEQUENTIAL)
+	else if (mq->tracker.thresholds[PATTERN_SEQUENTIAL] &&
+		 iot_pattern(&mq->tracker) == PATTERN_SEQUENTIAL)
 		result->op = POLICY_MISS;
 
 	else if (e)
@@ -869,7 +899,7 @@ static void mq_destroy(struct dm_cache_policy *p)
 {
 	struct mq_policy *mq = to_mq_policy(p);
 
-	kfree(mq->table);
+	vfree(mq->table);
 	epool_exit(&mq->cache_pool);
 	epool_exit(&mq->pre_cache_pool);
 	kfree(mq);
@@ -1135,20 +1165,28 @@ static int mq_set_config_value(struct dm_cache_policy *p,
 			       const char *key, const char *value)
 {
 	struct mq_policy *mq = to_mq_policy(p);
-	enum io_pattern pattern;
 	unsigned long tmp;
-
-	if (!strcasecmp(key, "random_threshold"))
-		pattern = PATTERN_RANDOM;
-	else if (!strcasecmp(key, "sequential_threshold"))
-		pattern = PATTERN_SEQUENTIAL;
-	else
-		return -EINVAL;
 
 	if (kstrtoul(value, 10, &tmp))
 		return -EINVAL;
 
-	mq->tracker.thresholds[pattern] = tmp;
+	if (!strcasecmp(key, "random_threshold")) {
+		mq->tracker.thresholds[PATTERN_RANDOM] = tmp;
+
+	} else if (!strcasecmp(key, "sequential_threshold")) {
+		mq->tracker.thresholds[PATTERN_SEQUENTIAL] = tmp;
+
+	} else if (!strcasecmp(key, "discard_promote_adjustment"))
+		mq->discard_promote_adjustment = tmp;
+
+	else if (!strcasecmp(key, "read_promote_adjustment"))
+		mq->read_promote_adjustment = tmp;
+
+	else if (!strcasecmp(key, "write_promote_adjustment"))
+		mq->write_promote_adjustment = tmp;
+
+	else
+		return -EINVAL;
 
 	return 0;
 }
@@ -1158,9 +1196,16 @@ static int mq_emit_config_values(struct dm_cache_policy *p, char *result, unsign
 	ssize_t sz = 0;
 	struct mq_policy *mq = to_mq_policy(p);
 
-	DMEMIT("4 random_threshold %u sequential_threshold %u",
+	DMEMIT("10 random_threshold %u "
+	       "sequential_threshold %u "
+	       "discard_promote_adjustment %u "
+	       "read_promote_adjustment %u "
+	       "write_promote_adjustment %u",
 	       mq->tracker.thresholds[PATTERN_RANDOM],
-	       mq->tracker.thresholds[PATTERN_SEQUENTIAL]);
+	       mq->tracker.thresholds[PATTERN_SEQUENTIAL],
+	       mq->discard_promote_adjustment,
+	       mq->read_promote_adjustment,
+	       mq->write_promote_adjustment);
 
 	return 0;
 }
@@ -1212,7 +1257,9 @@ static struct dm_cache_policy *mq_create(dm_cblock_t cache_size,
 	mq->tick = 0;
 	mq->hit_count = 0;
 	mq->generation = 0;
-	mq->promote_threshold = 0;
+	mq->discard_promote_adjustment = DEFAULT_DISCARD_PROMOTE_ADJUSTMENT;
+	mq->read_promote_adjustment = DEFAULT_READ_PROMOTE_ADJUSTMENT;
+	mq->write_promote_adjustment = DEFAULT_WRITE_PROMOTE_ADJUSTMENT;
 	mutex_init(&mq->lock);
 	spin_lock_init(&mq->tick_lock);
 
@@ -1224,7 +1271,7 @@ static struct dm_cache_policy *mq_create(dm_cblock_t cache_size,
 
 	mq->nr_buckets = next_power(from_cblock(cache_size) / 2, 16);
 	mq->hash_bits = ffs(mq->nr_buckets) - 1;
-	mq->table = kzalloc(sizeof(*mq->table) * mq->nr_buckets, GFP_KERNEL);
+	mq->table = vzalloc(sizeof(*mq->table) * mq->nr_buckets);
 	if (!mq->table)
 		goto bad_alloc_table;
 
@@ -1244,7 +1291,7 @@ bad_pre_cache_init:
 
 static struct dm_cache_policy_type mq_policy_type = {
 	.name = "mq",
-	.version = {1, 1, 0},
+	.version = {1, 3, 0},
 	.hint_size = 4,
 	.owner = THIS_MODULE,
 	.create = mq_create
@@ -1252,10 +1299,11 @@ static struct dm_cache_policy_type mq_policy_type = {
 
 static struct dm_cache_policy_type default_policy_type = {
 	.name = "default",
-	.version = {1, 1, 0},
+	.version = {1, 3, 0},
 	.hint_size = 4,
 	.owner = THIS_MODULE,
-	.create = mq_create
+	.create = mq_create,
+	.real = &mq_policy_type
 };
 
 static int __init mq_init(void)

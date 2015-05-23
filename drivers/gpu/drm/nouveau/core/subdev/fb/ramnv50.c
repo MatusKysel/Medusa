@@ -70,13 +70,11 @@ nv50_ram_calc(struct nouveau_fb *pfb, u32 freq)
 	struct nv50_ramseq *hwsq = &ram->hwsq;
 	struct nvbios_perfE perfE;
 	struct nvbios_pll mpll;
-	struct bit_entry M;
 	struct {
 		u32 data;
 		u8  size;
 	} ramcfg, timing;
-	u8  ver, hdr, cnt, strap;
-	u32 data;
+	u8  ver, hdr, cnt, len, strap;
 	int N1, M1, N2, M2, P;
 	int ret, i;
 
@@ -93,16 +91,7 @@ nv50_ram_calc(struct nouveau_fb *pfb, u32 freq)
 	} while (perfE.memory < freq);
 
 	/* locate specific data set for the attached memory */
-	if (bit_entry(bios, 'M', &M) || M.version != 1 || M.length < 5) {
-		nv_error(pfb, "invalid/missing memory table\n");
-		return -EINVAL;
-	}
-
-	strap = (nv_rd32(pfb, 0x101000) & 0x0000003c) >> 2;
-	data = nv_ro16(bios, M.offset + 3);
-	if (data)
-		strap = nv_ro08(bios, data + strap);
-
+	strap = nvbios_ramcfg_index(nv_subdev(pfb));
 	if (strap >= cnt) {
 		nv_error(pfb, "invalid ramcfg strap\n");
 		return -EINVAL;
@@ -113,7 +102,8 @@ nv50_ram_calc(struct nouveau_fb *pfb, u32 freq)
 	/* lookup memory timings, if bios says they're present */
 	strap = nv_ro08(bios, ramcfg.data + 0x01);
 	if (strap != 0xff) {
-		timing.data = nvbios_timing_entry(bios, strap, &ver, &hdr);
+		timing.data = nvbios_timingEe(bios, strap, &ver, &hdr,
+					     &cnt, &len);
 		if (!timing.data || ver != 0x10 || hdr < 0x12) {
 			nv_error(pfb, "invalid/missing timing entry "
 				 "%02x %04x %02x %02x\n",
@@ -221,7 +211,7 @@ nv50_ram_prog(struct nouveau_fb *pfb)
 	struct nv50_ram *ram = (void *)pfb->ram;
 	struct nv50_ramseq *hwsq = &ram->hwsq;
 
-	ram_exec(hwsq, nouveau_boolopt(device->cfgopt, "NvMemExec", false));
+	ram_exec(hwsq, nouveau_boolopt(device->cfgopt, "NvMemExec", true));
 	return 0;
 }
 
@@ -290,7 +280,7 @@ nv50_ram_get(struct nouveau_fb *pfb, u64 size, u32 align, u32 ncmin,
 		if (align == 16) {
 			int n = (max >> 4) * comp;
 
-			ret = nouveau_mm_head(tags, 1, n, n, 1, &mem->tag);
+			ret = nouveau_mm_head(tags, 0, 1, n, n, 1, &mem->tag);
 			if (ret)
 				mem->tag = NULL;
 		}
@@ -306,9 +296,9 @@ nv50_ram_get(struct nouveau_fb *pfb, u64 size, u32 align, u32 ncmin,
 	type = nv50_fb_memtype[type];
 	do {
 		if (back)
-			ret = nouveau_mm_tail(heap, type, max, min, align, &r);
+			ret = nouveau_mm_tail(heap, 0, type, max, min, align, &r);
 		else
-			ret = nouveau_mm_head(heap, type, max, min, align, &r);
+			ret = nouveau_mm_head(heap, 0, type, max, min, align, &r);
 		if (ret) {
 			mutex_unlock(&pfb->base.mutex);
 			pfb->ram->put(pfb, &mem);
@@ -329,27 +319,22 @@ nv50_ram_get(struct nouveau_fb *pfb, u64 size, u32 align, u32 ncmin,
 static u32
 nv50_fb_vram_rblock(struct nouveau_fb *pfb, struct nouveau_ram *ram)
 {
-	int i, parts, colbits, rowbitsa, rowbitsb, banks;
+	int colbits, rowbitsa, rowbitsb, banks;
 	u64 rowsize, predicted;
-	u32 r0, r4, rt, ru, rblock_size;
+	u32 r0, r4, rt, rblock_size;
 
 	r0 = nv_rd32(pfb, 0x100200);
 	r4 = nv_rd32(pfb, 0x100204);
 	rt = nv_rd32(pfb, 0x100250);
-	ru = nv_rd32(pfb, 0x001540);
-	nv_debug(pfb, "memcfg 0x%08x 0x%08x 0x%08x 0x%08x\n", r0, r4, rt, ru);
-
-	for (i = 0, parts = 0; i < 8; i++) {
-		if (ru & (0x00010000 << i))
-			parts++;
-	}
+	nv_debug(pfb, "memcfg 0x%08x 0x%08x 0x%08x 0x%08x\n", r0, r4, rt,
+			nv_rd32(pfb, 0x001540));
 
 	colbits  =  (r4 & 0x0000f000) >> 12;
 	rowbitsa = ((r4 & 0x000f0000) >> 16) + 8;
 	rowbitsb = ((r4 & 0x00f00000) >> 20) + 8;
 	banks    = 1 << (((r4 & 0x03000000) >> 24) + 2);
 
-	rowsize = parts * banks * (1 << colbits) * 8;
+	rowsize = ram->parts * banks * (1 << colbits) * 8;
 	predicted = rowsize << rowbitsa;
 	if (r0 & 0x00000004)
 		predicted += rowsize << rowbitsb;
@@ -385,6 +370,9 @@ nv50_ram_create_(struct nouveau_object *parent, struct nouveau_object *engine,
 
 	ram->size = nv_rd32(pfb, 0x10020c);
 	ram->size = (ram->size & 0xffffff00) | ((ram->size & 0x000000ff) << 32);
+
+	ram->part_mask = (nv_rd32(pfb, 0x001540) & 0x00ff0000) >> 16;
+	ram->parts = hweight8(ram->part_mask);
 
 	switch (nv_rd32(pfb, 0x100714) & 0x00000007) {
 	case 0: ram->type = NV_MEM_TYPE_DDR1; break;

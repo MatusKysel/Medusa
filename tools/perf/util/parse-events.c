@@ -6,11 +6,12 @@
 #include "parse-options.h"
 #include "parse-events.h"
 #include "exec_cmd.h"
-#include "linux/string.h"
+#include "string.h"
 #include "symbol.h"
 #include "cache.h"
 #include "header.h"
-#include <lk/debugfs.h>
+#include "debug.h"
+#include <api/fs/debugfs.h>
 #include "parse-events-bison.h"
 #define YY_EXTRA_TYPE int
 #include "parse-events-flex.h"
@@ -28,6 +29,15 @@ struct event_symbol {
 extern int parse_events_debug;
 #endif
 int parse_events_parse(void *data, void *scanner);
+
+static struct perf_pmu_event_symbol *perf_pmu_events_list;
+/*
+ * The variable indicates the number of supported pmu event symbols.
+ * 0 means not initialized and ready to init
+ * -1 means failed to init, don't try anymore
+ * >0 is the number of supported pmu event symbols
+ */
+static int perf_pmu_events_list_num;
 
 static struct event_symbol event_symbols_hw[PERF_COUNT_HW_MAX] = {
 	[PERF_COUNT_HW_CPU_CYCLES] = {
@@ -204,7 +214,7 @@ struct tracepoint_path *tracepoint_id_to_path(u64 config)
 				}
 				path->name = malloc(MAX_EVENT_LENGTH);
 				if (!path->name) {
-					free(path->system);
+					zfree(&path->system);
 					free(path);
 					return NULL;
 				}
@@ -236,8 +246,8 @@ struct tracepoint_path *tracepoint_name_to_path(const char *name)
 	path->name = strdup(str+1);
 
 	if (path->system == NULL || path->name == NULL) {
-		free(path->system);
-		free(path->name);
+		zfree(&path->system);
+		zfree(&path->name);
 		free(path);
 		path = NULL;
 	}
@@ -269,9 +279,10 @@ const char *event_type(int type)
 
 
 
-static int __add_event(struct list_head *list, int *idx,
-		       struct perf_event_attr *attr,
-		       char *name, struct cpu_map *cpus)
+static struct perf_evsel *
+__add_event(struct list_head *list, int *idx,
+	    struct perf_event_attr *attr,
+	    char *name, struct cpu_map *cpus)
 {
 	struct perf_evsel *evsel;
 
@@ -279,19 +290,19 @@ static int __add_event(struct list_head *list, int *idx,
 
 	evsel = perf_evsel__new_idx(attr, (*idx)++);
 	if (!evsel)
-		return -ENOMEM;
+		return NULL;
 
 	evsel->cpus = cpus;
 	if (name)
 		evsel->name = strdup(name);
 	list_add_tail(&evsel->node, list);
-	return 0;
+	return evsel;
 }
 
 static int add_event(struct list_head *list, int *idx,
 		     struct perf_event_attr *attr, char *name)
 {
-	return __add_event(list, idx, attr, name, NULL);
+	return __add_event(list, idx, attr, name, NULL) ? 0 : -ENOMEM;
 }
 
 static int parse_aliases(char *str, const char *names[][PERF_EVSEL__MAX_ALIASES], int size)
@@ -632,15 +643,28 @@ int parse_events_add_pmu(struct list_head *list, int *idx,
 			 char *name, struct list_head *head_config)
 {
 	struct perf_event_attr attr;
+	struct perf_pmu_info info;
 	struct perf_pmu *pmu;
+	struct perf_evsel *evsel;
 
 	pmu = perf_pmu__find(name);
 	if (!pmu)
 		return -EINVAL;
 
-	memset(&attr, 0, sizeof(attr));
+	if (pmu->default_config) {
+		memcpy(&attr, pmu->default_config,
+		       sizeof(struct perf_event_attr));
+	} else {
+		memset(&attr, 0, sizeof(attr));
+	}
 
-	if (perf_pmu__check_alias(pmu, head_config))
+	if (!head_config) {
+		attr.type = pmu->type;
+		evsel = __add_event(list, idx, &attr, NULL, pmu->cpus);
+		return evsel ? 0 : -ENOMEM;
+	}
+
+	if (perf_pmu__check_alias(pmu, head_config, &info))
 		return -EINVAL;
 
 	/*
@@ -652,8 +676,16 @@ int parse_events_add_pmu(struct list_head *list, int *idx,
 	if (perf_pmu__config(pmu, &attr, head_config))
 		return -EINVAL;
 
-	return __add_event(list, idx, &attr, pmu_event_name(head_config),
-			   pmu->cpus);
+	evsel = __add_event(list, idx, &attr, pmu_event_name(head_config),
+			    pmu->cpus);
+	if (evsel) {
+		evsel->unit = info.unit;
+		evsel->scale = info.scale;
+		evsel->per_pkg = info.per_pkg;
+		evsel->snapshot = info.snapshot;
+	}
+
+	return evsel ? 0 : -ENOMEM;
 }
 
 int parse_events__modifier_group(struct list_head *list,
@@ -810,8 +842,7 @@ int parse_events__modifier_event(struct list_head *list, char *str, bool add)
 	if (!add && get_event_modifier(&mod, str, NULL))
 		return -EINVAL;
 
-	list_for_each_entry(evsel, list, node) {
-
+	__evlist__for_each(list, evsel) {
 		if (add && get_event_modifier(&mod, str, evsel))
 			return -EINVAL;
 
@@ -835,7 +866,7 @@ int parse_events_name(struct list_head *list, char *name)
 {
 	struct perf_evsel *evsel;
 
-	list_for_each_entry(evsel, list, node) {
+	__evlist__for_each(list, evsel) {
 		if (!evsel->name)
 			evsel->name = strdup(name);
 	}
@@ -843,30 +874,111 @@ int parse_events_name(struct list_head *list, char *name)
 	return 0;
 }
 
-static int parse_events__scanner(const char *str, void *data, int start_token);
-
-static int parse_events_fixup(int ret, const char *str, void *data,
-			      int start_token)
+static int
+comp_pmu(const void *p1, const void *p2)
 {
-	char *o = strdup(str);
-	char *s = NULL;
-	char *t = o;
-	char *p;
+	struct perf_pmu_event_symbol *pmu1 = (struct perf_pmu_event_symbol *) p1;
+	struct perf_pmu_event_symbol *pmu2 = (struct perf_pmu_event_symbol *) p2;
+
+	return strcmp(pmu1->symbol, pmu2->symbol);
+}
+
+static void perf_pmu__parse_cleanup(void)
+{
+	if (perf_pmu_events_list_num > 0) {
+		struct perf_pmu_event_symbol *p;
+		int i;
+
+		for (i = 0; i < perf_pmu_events_list_num; i++) {
+			p = perf_pmu_events_list + i;
+			free(p->symbol);
+		}
+		free(perf_pmu_events_list);
+		perf_pmu_events_list = NULL;
+		perf_pmu_events_list_num = 0;
+	}
+}
+
+#define SET_SYMBOL(str, stype)		\
+do {					\
+	p->symbol = str;		\
+	if (!p->symbol)			\
+		goto err;		\
+	p->type = stype;		\
+} while (0)
+
+/*
+ * Read the pmu events list from sysfs
+ * Save it into perf_pmu_events_list
+ */
+static void perf_pmu__parse_init(void)
+{
+
+	struct perf_pmu *pmu = NULL;
+	struct perf_pmu_alias *alias;
 	int len = 0;
 
-	if (!o)
-		return ret;
-	while ((p = strsep(&t, ",")) != NULL) {
-		if (s)
-			str_append(&s, &len, ",");
-		str_append(&s, &len, "cpu/");
-		str_append(&s, &len, p);
-		str_append(&s, &len, "/");
+	pmu = perf_pmu__find("cpu");
+	if ((pmu == NULL) || list_empty(&pmu->aliases)) {
+		perf_pmu_events_list_num = -1;
+		return;
 	}
-	free(o);
-	if (!s)
-		return -ENOMEM;
-	return parse_events__scanner(s, data, start_token);
+	list_for_each_entry(alias, &pmu->aliases, list) {
+		if (strchr(alias->name, '-'))
+			len++;
+		len++;
+	}
+	perf_pmu_events_list = malloc(sizeof(struct perf_pmu_event_symbol) * len);
+	if (!perf_pmu_events_list)
+		return;
+	perf_pmu_events_list_num = len;
+
+	len = 0;
+	list_for_each_entry(alias, &pmu->aliases, list) {
+		struct perf_pmu_event_symbol *p = perf_pmu_events_list + len;
+		char *tmp = strchr(alias->name, '-');
+
+		if (tmp != NULL) {
+			SET_SYMBOL(strndup(alias->name, tmp - alias->name),
+					PMU_EVENT_SYMBOL_PREFIX);
+			p++;
+			SET_SYMBOL(strdup(++tmp), PMU_EVENT_SYMBOL_SUFFIX);
+			len += 2;
+		} else {
+			SET_SYMBOL(strdup(alias->name), PMU_EVENT_SYMBOL);
+			len++;
+		}
+	}
+	qsort(perf_pmu_events_list, len,
+		sizeof(struct perf_pmu_event_symbol), comp_pmu);
+
+	return;
+err:
+	perf_pmu__parse_cleanup();
+}
+
+enum perf_pmu_event_symbol_type
+perf_pmu__parse_check(const char *name)
+{
+	struct perf_pmu_event_symbol p, *r;
+
+	/* scan kernel pmu events from sysfs if needed */
+	if (perf_pmu_events_list_num == 0)
+		perf_pmu__parse_init();
+	/*
+	 * name "cpu" could be prefix of cpu-cycles or cpu// events.
+	 * cpu-cycles has been handled by hardcode.
+	 * So it must be cpu// events, not kernel pmu event.
+	 */
+	if ((perf_pmu_events_list_num <= 0) || !strcmp(name, "cpu"))
+		return PMU_EVENT_SYMBOL_ERR;
+
+	p.symbol = strdup(name);
+	r = bsearch(&p, perf_pmu_events_list,
+			(size_t) perf_pmu_events_list_num,
+			sizeof(struct perf_pmu_event_symbol), comp_pmu);
+	free(p.symbol);
+	return r ? r->type : PMU_EVENT_SYMBOL_ERR;
 }
 
 static int parse_events__scanner(const char *str, void *data, int start_token)
@@ -889,8 +1001,6 @@ static int parse_events__scanner(const char *str, void *data, int start_token)
 	parse_events__flush_buffer(buffer, scanner);
 	parse_events__delete_buffer(buffer, scanner);
 	parse_events_lex_destroy(scanner);
-	if (ret && !strchr(str, '/'))
-		ret = parse_events_fixup(ret, str, data, start_token);
 	return ret;
 }
 
@@ -907,7 +1017,7 @@ int parse_events_terms(struct list_head *terms, const char *str)
 	ret = parse_events__scanner(str, &data, PE_START_TERMS);
 	if (!ret) {
 		list_splice(data.terms, terms);
-		free(data.terms);
+		zfree(&data.terms);
 		return 0;
 	}
 
@@ -925,6 +1035,7 @@ int parse_events(struct perf_evlist *evlist, const char *str)
 	int ret;
 
 	ret = parse_events__scanner(str, &data, PE_START_EVENTS);
+	perf_pmu__parse_cleanup();
 	if (!ret) {
 		int entries = data.idx - evlist->nr_entries;
 		perf_evlist__splice_list_tail(evlist, &data.list, entries);
@@ -964,7 +1075,7 @@ int parse_filter(const struct option *opt, const char *str,
 
 	if (last == NULL || last->attr.type != PERF_TYPE_TRACEPOINT) {
 		fprintf(stderr,
-			"-F option should follow a -e tracepoint option\n");
+			"--filter option should follow a -e tracepoint option\n");
 		return -1;
 	}
 
@@ -997,9 +1108,11 @@ void print_tracepoint_events(const char *subsys_glob, const char *event_glob,
 	struct dirent *sys_next, *evt_next, sys_dirent, evt_dirent;
 	char evt_path[MAXPATHLEN];
 	char dir_path[MAXPATHLEN];
+	char sbuf[STRERR_BUFSIZE];
 
 	if (debugfs_valid_mountpoint(tracing_events_path)) {
-		printf("  [ Tracepoints not available: %s ]\n", strerror(errno));
+		printf("  [ Tracepoints not available: %s ]\n",
+			strerror_r(errno, sbuf, sizeof(sbuf)));
 		return;
 	}
 
@@ -1082,12 +1195,12 @@ int is_valid_tracepoint(const char *event_string)
 static bool is_event_supported(u8 type, unsigned config)
 {
 	bool ret = true;
+	int open_return;
 	struct perf_evsel *evsel;
 	struct perf_event_attr attr = {
 		.type = type,
 		.config = config,
 		.disabled = 1,
-		.exclude_kernel = 1,
 	};
 	struct {
 		struct thread_map map;
@@ -1099,7 +1212,20 @@ static bool is_event_supported(u8 type, unsigned config)
 
 	evsel = perf_evsel__new(&attr);
 	if (evsel) {
-		ret = perf_evsel__open(evsel, NULL, &tmap.map) >= 0;
+		open_return = perf_evsel__open(evsel, NULL, &tmap.map);
+		ret = open_return >= 0;
+
+		if (open_return == -EACCES) {
+			/*
+			 * This happens if the paranoid value
+			 * /proc/sys/kernel/perf_event_paranoid is set to 2
+			 * Re-run with exclude_kernel set; we don't do that
+			 * by default as some ARM machines do not support it.
+			 *
+			 */
+			evsel->attr.exclude_kernel = 1;
+			ret = perf_evsel__open(evsel, NULL, &tmap.map) >= 0;
+		}
 		perf_evsel__delete(evsel);
 	}
 

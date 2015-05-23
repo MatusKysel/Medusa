@@ -330,8 +330,7 @@ static int __init dma_channel_table_init(void)
 	if (err) {
 		pr_err("initialization failure\n");
 		for_each_dma_cap_mask(cap, dma_cap_mask_all)
-			if (channel_table[cap])
-				free_percpu(channel_table[cap]);
+			free_percpu(channel_table[cap]);
 	}
 
 	return err;
@@ -535,11 +534,41 @@ struct dma_chan *dma_get_slave_channel(struct dma_chan *chan)
 }
 EXPORT_SYMBOL_GPL(dma_get_slave_channel);
 
+struct dma_chan *dma_get_any_slave_channel(struct dma_device *device)
+{
+	dma_cap_mask_t mask;
+	struct dma_chan *chan;
+	int err;
+
+	dma_cap_zero(mask);
+	dma_cap_set(DMA_SLAVE, mask);
+
+	/* lock against __dma_request_channel */
+	mutex_lock(&dma_list_mutex);
+
+	chan = private_candidate(&mask, device, NULL, NULL);
+	if (chan) {
+		err = dma_chan_get(chan);
+		if (err) {
+			pr_debug("%s: failed to get %s: (%d)\n",
+				__func__, dma_chan_name(chan), err);
+			chan = NULL;
+		}
+	}
+
+	mutex_unlock(&dma_list_mutex);
+
+	return chan;
+}
+EXPORT_SYMBOL_GPL(dma_get_any_slave_channel);
+
 /**
  * __dma_request_channel - try to allocate an exclusive channel
  * @mask: capabilities that the channel must satisfy
  * @fn: optional callback to disposition available channels
  * @fn_param: opaque parameter to pass to dma_filter_fn
+ *
+ * Returns pointer to appropriate DMA channel on success or NULL.
  */
 struct dma_chan *__dma_request_channel(const dma_cap_mask_t *mask,
 				       dma_filter_fn fn, void *fn_param)
@@ -591,8 +620,11 @@ EXPORT_SYMBOL_GPL(__dma_request_channel);
  * dma_request_slave_channel - try to allocate an exclusive slave channel
  * @dev:	pointer to client device structure
  * @name:	slave channel name
+ *
+ * Returns pointer to appropriate DMA channel on success or an error pointer.
  */
-struct dma_chan *dma_request_slave_channel(struct device *dev, const char *name)
+struct dma_chan *dma_request_slave_channel_reason(struct device *dev,
+						  const char *name)
 {
 	/* If device-tree is present get slave info from here */
 	if (dev->of_node)
@@ -602,7 +634,24 @@ struct dma_chan *dma_request_slave_channel(struct device *dev, const char *name)
 	if (ACPI_HANDLE(dev))
 		return acpi_dma_request_slave_chan_by_name(dev, name);
 
-	return NULL;
+	return ERR_PTR(-ENODEV);
+}
+EXPORT_SYMBOL_GPL(dma_request_slave_channel_reason);
+
+/**
+ * dma_request_slave_channel - try to allocate an exclusive slave channel
+ * @dev:	pointer to client device structure
+ * @name:	slave channel name
+ *
+ * Returns pointer to appropriate DMA channel on success or NULL.
+ */
+struct dma_chan *dma_request_slave_channel(struct device *dev,
+					   const char *name)
+{
+	struct dma_chan *ch = dma_request_slave_channel_reason(dev, name);
+	if (IS_ERR(ch))
+		return NULL;
+	return ch;
 }
 EXPORT_SYMBOL_GPL(dma_request_slave_channel);
 
@@ -959,6 +1008,7 @@ static void dmaengine_unmap(struct kref *kref)
 		dma_unmap_page(dev, unmap->addr[i], unmap->len,
 			       DMA_BIDIRECTIONAL);
 	}
+	cnt = unmap->map_cnt;
 	mempool_free(unmap, __get_unmap_pool(cnt)->pool);
 }
 
@@ -1024,114 +1074,11 @@ dmaengine_get_unmap_data(struct device *dev, int nr, gfp_t flags)
 	memset(unmap, 0, sizeof(*unmap));
 	kref_init(&unmap->kref);
 	unmap->dev = dev;
+	unmap->map_cnt = nr;
 
 	return unmap;
 }
 EXPORT_SYMBOL(dmaengine_get_unmap_data);
-
-/**
- * dma_async_memcpy_pg_to_pg - offloaded copy from page to page
- * @chan: DMA channel to offload copy to
- * @dest_pg: destination page
- * @dest_off: offset in page to copy to
- * @src_pg: source page
- * @src_off: offset in page to copy from
- * @len: length
- *
- * Both @dest_page/@dest_off and @src_page/@src_off must be mappable to a bus
- * address according to the DMA mapping API rules for streaming mappings.
- * Both @dest_page/@dest_off and @src_page/@src_off must stay memory resident
- * (kernel memory or locked user space pages).
- */
-dma_cookie_t
-dma_async_memcpy_pg_to_pg(struct dma_chan *chan, struct page *dest_pg,
-	unsigned int dest_off, struct page *src_pg, unsigned int src_off,
-	size_t len)
-{
-	struct dma_device *dev = chan->device;
-	struct dma_async_tx_descriptor *tx;
-	struct dmaengine_unmap_data *unmap;
-	dma_cookie_t cookie;
-	unsigned long flags;
-
-	unmap = dmaengine_get_unmap_data(dev->dev, 2, GFP_NOWAIT);
-	if (!unmap)
-		return -ENOMEM;
-
-	unmap->to_cnt = 1;
-	unmap->from_cnt = 1;
-	unmap->addr[0] = dma_map_page(dev->dev, src_pg, src_off, len,
-				      DMA_TO_DEVICE);
-	unmap->addr[1] = dma_map_page(dev->dev, dest_pg, dest_off, len,
-				      DMA_FROM_DEVICE);
-	unmap->len = len;
-	flags = DMA_CTRL_ACK;
-	tx = dev->device_prep_dma_memcpy(chan, unmap->addr[1], unmap->addr[0],
-					 len, flags);
-
-	if (!tx) {
-		dmaengine_unmap_put(unmap);
-		return -ENOMEM;
-	}
-
-	dma_set_unmap(tx, unmap);
-	cookie = tx->tx_submit(tx);
-	dmaengine_unmap_put(unmap);
-
-	preempt_disable();
-	__this_cpu_add(chan->local->bytes_transferred, len);
-	__this_cpu_inc(chan->local->memcpy_count);
-	preempt_enable();
-
-	return cookie;
-}
-EXPORT_SYMBOL(dma_async_memcpy_pg_to_pg);
-
-/**
- * dma_async_memcpy_buf_to_buf - offloaded copy between virtual addresses
- * @chan: DMA channel to offload copy to
- * @dest: destination address (virtual)
- * @src: source address (virtual)
- * @len: length
- *
- * Both @dest and @src must be mappable to a bus address according to the
- * DMA mapping API rules for streaming mappings.
- * Both @dest and @src must stay memory resident (kernel memory or locked
- * user space pages).
- */
-dma_cookie_t
-dma_async_memcpy_buf_to_buf(struct dma_chan *chan, void *dest,
-			    void *src, size_t len)
-{
-	return dma_async_memcpy_pg_to_pg(chan, virt_to_page(dest),
-					 (unsigned long) dest & ~PAGE_MASK,
-					 virt_to_page(src),
-					 (unsigned long) src & ~PAGE_MASK, len);
-}
-EXPORT_SYMBOL(dma_async_memcpy_buf_to_buf);
-
-/**
- * dma_async_memcpy_buf_to_pg - offloaded copy from address to page
- * @chan: DMA channel to offload copy to
- * @page: destination page
- * @offset: offset in page to copy to
- * @kdata: source address (virtual)
- * @len: length
- *
- * Both @page/@offset and @kdata must be mappable to a bus address according
- * to the DMA mapping API rules for streaming mappings.
- * Both @page/@offset and @kdata must stay memory resident (kernel memory or
- * locked user space pages)
- */
-dma_cookie_t
-dma_async_memcpy_buf_to_pg(struct dma_chan *chan, struct page *page,
-			   unsigned int offset, void *kdata, size_t len)
-{
-	return dma_async_memcpy_pg_to_pg(chan, page, offset,
-					 virt_to_page(kdata),
-					 (unsigned long) kdata & ~PAGE_MASK, len);
-}
-EXPORT_SYMBOL(dma_async_memcpy_buf_to_pg);
 
 void dma_async_tx_descriptor_init(struct dma_async_tx_descriptor *tx,
 	struct dma_chan *chan)

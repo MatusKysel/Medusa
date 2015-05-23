@@ -1,24 +1,6 @@
 menu "Android"
 
-config ANDROID
-	bool "Android Drivers"
-	default N
-	---help---
-	  Enable support for various drivers needed on the Android platform
-
 if ANDROID
-
-config ANDROID_BINDER_IPC
-	bool "Android Binder IPC Driver"
-	depends on MMU
-	default n
-	---help---
-	  Binder is used in Android for both communication between processes,
-	  and remote method invocation.
-
-	  This means one Android process can call a method/routine in another
-	  Android process, using Binder to identify, invoke and pass arguments
-	  between said processes.
 
 config ASHMEM
 	bool "Enable the Anonymous Shared Memory Subsystem"
@@ -60,12 +42,11 @@ config ANDROID_TIMED_GPIO
 
 config ANDROID_LOW_MEMORY_KILLER
 	bool "Android Low Memory Killer"
-	default N
 	---help---
 	  Registers processes to be killed when memory is low
 
 config ANDROID_INTF_ALARM_DEV
-	bool "Android alarm driver"
+	tristate "Android alarm driver"
 	depends on RTC_CLASS
 	default n
 	---help---
@@ -77,6 +58,7 @@ config SYNC
 	bool "Synchronization framework"
 	default n
 	select ANON_INODES
+	select DMA_SHARED_BUFFER
 	---help---
 	  This option enables the framework for synchronization between multiple
 	  drivers.  Sync implementations can take advantage of hardware
@@ -99,6 +81,8 @@ config SW_SYNC_USER
 	  Provides a user space API to the sw sync object.
 	  *WARNING* improper use of this can result in deadlocking kernel
 	  drivers from userspace.
+
+source "drivers/staging/android/ion/Kconfig"
 
 endif # if ANDROID
 

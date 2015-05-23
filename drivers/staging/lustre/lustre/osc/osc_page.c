@@ -70,7 +70,7 @@ static int osc_page_is_dlocked(const struct lu_env *env,
 	struct lustre_handle   *lockh;
 	ldlm_policy_data_t     *policy;
 	ldlm_mode_t	     dlmmode;
-	int		     flags;
+	__u64                   flags;
 
 	might_sleep();
 
@@ -352,7 +352,7 @@ static const char *osc_list(struct list_head *head)
 	return list_empty(head) ? "-" : "+";
 }
 
-static inline cfs_time_t osc_submit_duration(struct osc_page *opg)
+static inline unsigned long osc_submit_duration(struct osc_page *opg)
 {
 	if (opg->ops_submit_time == 0)
 		return 0;
@@ -369,12 +369,7 @@ static int osc_page_print(const struct lu_env *env,
 	struct osc_object     *obj = cl2osc(slice->cpl_obj);
 	struct client_obd     *cli = &osc_export(obj)->exp_obd->u.cli;
 
-	return (*printer)(env, cookie, LUSTRE_OSC_NAME"-page@%p: "
-			  "1< %#x %d %u %s %s > "
-			  "2< "LPU64" %u %u %#x %#x | %p %p %p > "
-			  "3< %s %p %d %lu %d > "
-			  "4< %d %d %d %lu %s | %s %s %s %s > "
-			  "5< %s %s %s %s | %d %s | %d %s %s>\n",
+	return (*printer)(env, cookie, LUSTRE_OSC_NAME "-page@%p: 1< %#x %d %u %s %s > 2< %llu %u %u %#x %#x | %p %p %p > 3< %s %p %d %lu %d > 4< %d %d %d %lu %s | %s %s %s %s > 5< %s %s %s %s | %d %s | %d %s %s>\n",
 			  opg,
 			  /* 1 */
 			  oap->oap_magic, oap->oap_cmd,
@@ -550,8 +545,8 @@ void osc_page_submit(const struct lu_env *env, struct osc_page *opg,
 	LINVRNT(osc_page_protected(env, opg,
 				   crt == CRT_WRITE ? CLM_WRITE : CLM_READ, 1));
 
-	LASSERTF(oap->oap_magic == OAP_MAGIC, "Bad oap magic: oap %p, "
-		 "magic 0x%x\n", oap, oap->oap_magic);
+	LASSERTF(oap->oap_magic == OAP_MAGIC, "Bad oap magic: oap %p, magic 0x%x\n",
+		 oap, oap->oap_magic);
 	LASSERT(oap->oap_async_flags & ASYNC_READY);
 	LASSERT(oap->oap_async_flags & ASYNC_COUNT_STABLE);
 
@@ -561,7 +556,7 @@ void osc_page_submit(const struct lu_env *env, struct osc_page *opg,
 	oap->oap_brw_flags = OBD_BRW_SYNC | brw_flags;
 
 	if (!client_is_remote(osc_export(obj)) &&
-			cfs_capable(CFS_CAP_SYS_RESOURCE)) {
+			capable(CFS_CAP_SYS_RESOURCE)) {
 		oap->oap_brw_flags |= OBD_BRW_NOQUOTA;
 		oap->oap_cmd |= OBD_BRW_NOQUOTA;
 	}
@@ -587,7 +582,7 @@ static atomic_t osc_lru_waiters = ATOMIC_INIT(0);
 /* LRU pages are freed in batch mode. OSC should at least free this
  * number of pages to avoid running out of LRU budget, and.. */
 static const int lru_shrink_min = 2 << (20 - PAGE_CACHE_SHIFT);  /* 2M */
-/* free this number at most otherwise it will take too long time to finsih. */
+/* free this number at most otherwise it will take too long time to finish. */
 static const int lru_shrink_max = 32 << (20 - PAGE_CACHE_SHIFT); /* 32M */
 
 /* Check if we can free LRU slots from this OSC. If there exists LRU waiters,
@@ -606,7 +601,7 @@ static int osc_cache_too_much(struct client_obd *cli)
 		return min(pages, lru_shrink_max);
 
 	/* if it's going to run out LRU slots, we should free some, but not
-	 * too much to maintain faireness among OSCs. */
+	 * too much to maintain fairness among OSCs. */
 	if (atomic_read(cli->cl_lru_left) < cache->ccc_lru_max >> 4) {
 		unsigned long tmp;
 

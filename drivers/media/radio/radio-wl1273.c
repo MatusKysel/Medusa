@@ -512,8 +512,11 @@ static int wl1273_fm_upload_firmware_patch(struct wl1273_device *radio)
 	 * Uploading the firmware patch is not always necessary,
 	 * so we only print an info message.
 	 */
-	if (request_firmware(&fw_p, fw_name, dev))
+	if (request_firmware(&fw_p, fw_name, dev)) {
+		dev_info(dev, "%s - %s not found\n", __func__, fw_name);
+
 		return 0;
+	}
 
 	ptr = (__u8 *) fw_p->data;
 	packet_num = ptr[0];
@@ -1276,10 +1279,12 @@ static int wl1273_fm_vidioc_querycap(struct file *file, void *priv,
 	strlcpy(capability->bus_info, radio->bus_type,
 		sizeof(capability->bus_info));
 
-	capability->capabilities = V4L2_CAP_HW_FREQ_SEEK |
+	capability->device_caps = V4L2_CAP_HW_FREQ_SEEK |
 		V4L2_CAP_TUNER | V4L2_CAP_RADIO | V4L2_CAP_AUDIO |
 		V4L2_CAP_RDS_CAPTURE | V4L2_CAP_MODULATOR |
 		V4L2_CAP_RDS_OUTPUT;
+	capability->capabilities = capability->device_caps |
+		V4L2_CAP_DEVICE_CAPS;
 
 	return 0;
 }
@@ -2145,7 +2150,6 @@ static struct platform_driver wl1273_fm_radio_driver = {
 	.remove		= wl1273_fm_radio_remove,
 	.driver		= {
 		.name	= "wl1273_fm_radio",
-		.owner	= THIS_MODULE,
 	},
 };
 

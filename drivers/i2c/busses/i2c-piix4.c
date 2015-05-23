@@ -11,10 +11,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 /*
@@ -38,7 +34,6 @@
 #include <linux/ioport.h>
 #include <linux/i2c.h>
 #include <linux/slab.h>
-#include <linux/init.h>
 #include <linux/dmi.h>
 #include <linux/acpi.h>
 #include <linux/io.h>
@@ -208,16 +203,16 @@ static int piix4_setup(struct pci_dev *PIIX4_dev,
 				   "WARNING: SMBus interface has been FORCEFULLY ENABLED!\n");
 		} else {
 			dev_err(&PIIX4_dev->dev,
-				"Host SMBus controller not enabled!\n");
+				"SMBus Host Controller not enabled!\n");
 			release_region(piix4_smba, SMBIOSIZE);
 			return -ENODEV;
 		}
 	}
 
 	if (((temp & 0x0E) == 8) || ((temp & 0x0E) == 2))
-		dev_dbg(&PIIX4_dev->dev, "Using Interrupt 9 for SMBus.\n");
+		dev_dbg(&PIIX4_dev->dev, "Using IRQ for SMBus\n");
 	else if ((temp & 0x0E) == 0)
-		dev_dbg(&PIIX4_dev->dev, "Using Interrupt SMI# for SMBus.\n");
+		dev_dbg(&PIIX4_dev->dev, "Using SMI# for SMBus\n");
 	else
 		dev_err(&PIIX4_dev->dev, "Illegal Interrupt configuration "
 			"(or code out of date)!\n");
@@ -279,7 +274,7 @@ static int piix4_setup_sb800(struct pci_dev *PIIX4_dev,
 
 	if (!smb_en_status) {
 		dev_err(&PIIX4_dev->dev,
-			"Host SMBus controller not enabled!\n");
+			"SMBus Host Controller not enabled!\n");
 		return -ENODEV;
 	}
 
@@ -295,7 +290,8 @@ static int piix4_setup_sb800(struct pci_dev *PIIX4_dev,
 	/* Aux SMBus does not support IRQ information */
 	if (aux) {
 		dev_info(&PIIX4_dev->dev,
-			 "SMBus Host Controller at 0x%x\n", piix4_smba);
+			 "Auxiliary SMBus Host Controller at 0x%x\n",
+			 piix4_smba);
 		return piix4_smba;
 	}
 
@@ -310,9 +306,9 @@ static int piix4_setup_sb800(struct pci_dev *PIIX4_dev,
 	release_region(piix4_smba + i2ccfg_offset, 1);
 
 	if (i2ccfg & 1)
-		dev_dbg(&PIIX4_dev->dev, "Using IRQ for SMBus.\n");
+		dev_dbg(&PIIX4_dev->dev, "Using IRQ for SMBus\n");
 	else
-		dev_dbg(&PIIX4_dev->dev, "Using SMI# for SMBus.\n");
+		dev_dbg(&PIIX4_dev->dev, "Using SMI# for SMBus\n");
 
 	dev_info(&PIIX4_dev->dev,
 		 "SMBus Host Controller at 0x%x, revision %d\n",
@@ -540,7 +536,7 @@ static const struct i2c_algorithm smbus_algorithm = {
 	.functionality	= piix4_func,
 };
 
-static DEFINE_PCI_DEVICE_TABLE(piix4_ids) = {
+static const struct pci_device_id piix4_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82371AB_3) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82443MX_3) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_EFAR, PCI_DEVICE_ID_EFAR_SLC90E66_3) },

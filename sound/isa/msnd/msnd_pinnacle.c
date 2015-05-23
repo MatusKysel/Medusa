@@ -389,11 +389,15 @@ static int upload_dsp_code(struct snd_card *card)
 	outb(HPBLKSEL_0, chip->io + HP_BLKS);
 
 	err = request_firmware(&init_fw, INITCODEFILE, card->dev);
-	if (err)
+	if (err < 0) {
+		printk(KERN_ERR LOGNAME ": Error loading " INITCODEFILE);
 		goto cleanup1;
+	}
 	err = request_firmware(&perm_fw, PERMCODEFILE, card->dev);
-	if (err)
+	if (err < 0) {
+		printk(KERN_ERR LOGNAME ": Error loading " PERMCODEFILE);
 		goto cleanup;
+	}
 
 	memcpy_toio(chip->mappedbase, perm_fw->data, perm_fw->size);
 	if (snd_msnd_upload_host(chip, init_fw->data, init_fw->size) < 0) {
@@ -901,12 +905,11 @@ static int snd_msnd_isa_probe(struct device *pdev, unsigned int idx)
 		return -ENODEV;
 	}
 
-	err = snd_card_create(index[idx], id[idx], THIS_MODULE,
-			      sizeof(struct snd_msnd), &card);
+	err = snd_card_new(pdev, index[idx], id[idx], THIS_MODULE,
+			   sizeof(struct snd_msnd), &card);
 	if (err < 0)
 		return err;
 
-	snd_card_set_dev(card, pdev);
 	chip = card->private_data;
 	chip->card = card;
 
@@ -1118,14 +1121,14 @@ static int snd_msnd_pnp_detect(struct pnp_card_link *pcard,
 	 * Create a new ALSA sound card entry, in anticipation
 	 * of detecting our hardware ...
 	 */
-	ret = snd_card_create(index[idx], id[idx], THIS_MODULE,
-			      sizeof(struct snd_msnd), &card);
+	ret = snd_card_new(&pcard->card->dev,
+			   index[idx], id[idx], THIS_MODULE,
+			   sizeof(struct snd_msnd), &card);
 	if (ret < 0)
 		return ret;
 
 	chip = card->private_data;
 	chip->card = card;
-	snd_card_set_dev(card, &pcard->card->dev);
 
 	/*
 	 * Read the correct parameters off the ISA PnP bus ...

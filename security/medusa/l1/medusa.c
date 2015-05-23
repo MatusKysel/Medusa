@@ -209,10 +209,8 @@ static void medusa_l1_inode_free_security(struct inode *inode)
         struct medusa_l1_inode_s *med;
 
 	if (inode->i_security != NULL) {
-		rcu_read_lock();
 		med = inode->i_security;
 		inode->i_security = NULL;
-		rcu_read_unlock();
 		kfree(med);
 	}
 }
@@ -230,6 +228,7 @@ static int medusa_l1_inode_create(struct inode *inode, struct dentry *dentry,
 			    umode_t mode)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if (medusa_create(dentry, mode) == MED_NO)
@@ -241,12 +240,22 @@ static int medusa_l1_inode_create(struct inode *inode, struct dentry *dentry,
 static int medusa_l1_inode_link(struct dentry *old_dentry, struct inode *inode,
 			  struct dentry *new_dentry)
 {
+	MEDUSA_CHECK(old_dentry)
+
+	if (!work) {
+		return 0;
+	}
+	
+	if (medusa_link(old_dentry, new_dentry->d_name.name) == MED_NO)
+		return -EPERM;
+
 	return 0;
 }
 
 static int medusa_l1_inode_unlink(struct inode *inode, struct dentry *dentry)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 
 	if (!work) {
 		return 0;
@@ -260,9 +269,7 @@ static int medusa_l1_inode_symlink(struct inode *inode, struct dentry *dentry,
 			     const char *name)
 {
 	MEDUSA_CHECK(dentry)
-//	if (!strcmp(name, "build.sh")) {
-//		work = 1;
-//	}	
+	return 0;
 	if (!work) {
 		return 0;
 	}
@@ -277,6 +284,7 @@ static int medusa_l1_inode_mkdir(struct inode *inode, struct dentry *dentry,
 			   	umode_t mask)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if(medusa_mkdir(dentry, mask) == MED_NO)
@@ -287,6 +295,7 @@ static int medusa_l1_inode_mkdir(struct inode *inode, struct dentry *dentry,
 static int medusa_l1_inode_rmdir(struct inode *inode, struct dentry *dentry)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if (medusa_rmdir(dentry) == MED_NO)
@@ -298,6 +307,7 @@ static int medusa_l1_inode_mknod(struct inode *inode, struct dentry *dentry,
 			   umode_t mode, dev_t dev)
 {
 	MEDUSA_CHECK(dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if(medusa_mknod(dentry, dev, mode) == MED_NO)
@@ -310,6 +320,7 @@ static int medusa_l1_inode_rename(struct inode *old_inode, struct dentry *old_de
 {
 	MEDUSA_CHECK(old_dentry)
 	MEDUSA_CHECK(new_dentry)
+	return 0;
 	if (!work)
 		return 0;
 	if (medusa_rename(old_dentry, new_dentry->d_name.name) == MED_NO)
@@ -483,9 +494,9 @@ static int medusa_l1_file_fcntl(struct file *file, unsigned int cmd,
 	return 0;
 }
 
-static int medusa_l1_file_set_fowner(struct file *file)
+static void medusa_l1_file_set_fowner(struct file *file)
 {
-	return 0;
+	return;
 }
 
 static int medusa_l1_file_send_sigiotask(struct task_struct *tsk,
@@ -954,7 +965,9 @@ static void medusa_l1_skb_owned_by(struct sk_buff *skb, struct sock *sk)
 
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 static int medusa_l1_xfrm_policy_alloc(struct xfrm_sec_ctx **ctxp,
-					  struct xfrm_user_sec_ctx *sec_ctx)
+                                          struct xfrm_user_sec_ctx *sec_ctx,
+                                          gfp_t gfp)
+
 {
 	return 0;
 }
@@ -1170,49 +1183,49 @@ static int medusa_l1_netlink_send(struct sock *sk, struct sk_buff *skb)
 static int medusa_l1_bprm_set_creds(struct linux_binprm *bprm)
 {
 	return 0;
-	struct inode* inode = file_inode(bprm->file);
-	if (!work)
-		return 0;
-#ifdef CONFIG_MEDUSA_FILE_CAPABILITIES
-	if (MED_MAGIC_VALID(&inode_security(inode)) ||
-			file_kobj_validate_dentry(bprm->file->f_dentry,NULL) > 0) {
-		/* If the security daemon sets the file capabilities, use them */
-		bprm->cred->cap_inheritable = inode_security(inode).icap;
-		bprm->cred->cap_permitted = inode_security(inode).pcap;
-		bprm->cred->cap_effective = inode_security(inode).ecap;
-	}
-#endif /* CONFIG_MEDUSA_FILE_CAPABILITIES */
-
-	{
-		int retval;
-#ifndef CONFIG_MEDUSA_FILE_CAPABILITIES
-		kernel_cap_t new_permitted, working;
-
-/* Privilege elevation check copied from compute_creds() */
-		new_permitted = cap_intersect(bprm->cap_permitted, cap_bset);
-		working = cap_intersect(bprm->cap_inheritable,
-					current->cap_inheritable);
-		new_permitted = cap_combine(new_permitted, working);
-#endif
-		if (!uid_eq(bprm->cred->euid,task_uid(current)) || !gid_eq(bprm->cred->egid, task_gid(current))
-#ifndef CONFIG_MEDUSA_FILE_CAPABILITIES
-		    || !cap_issubset(new_permitted, current->cap_permitted)
-#endif
-		   ) {
-			if ((retval = medusa_sexec(bprm)) == MED_NO)
-				return -EPERM;
-			if (retval == MED_SKIP) {
-				bprm->cred->euid = task_euid(current);
-				bprm->cred->egid = task_egid(current);
-#ifndef CONFIG_MEDUSA_FILE_CAPABILITIES
-				cap_clear(bprm->cap_inheritable);
-				bprm->cap_permitted = current->cap_permitted;
-				bprm->cap_effective = current->cap_effective;
-#endif
-			}
-		}
-	}
-	return 0;
+//	struct inode* inode = file_inode(bprm->file);
+//	if (!work)
+//		return 0;
+//#ifdef CONFIG_MEDUSA_FILE_CAPABILITIES
+//	if (MED_MAGIC_VALID(&inode_security(inode)) ||
+//			file_kobj_validate_dentry(bprm->file->f_dentry,NULL) > 0) {
+//		/* If the security daemon sets the file capabilities, use them */
+//		bprm->cred->cap_inheritable = inode_security(inode).icap;
+//		bprm->cred->cap_permitted = inode_security(inode).pcap;
+//		bprm->cred->cap_effective = inode_security(inode).ecap;
+//	}
+//#endif /* CONFIG_MEDUSA_FILE_CAPABILITIES */
+//
+//	{
+//		int retval;
+//#ifndef CONFIG_MEDUSA_FILE_CAPABILITIES
+//		kernel_cap_t new_permitted, working;
+//
+///* Privilege elevation check copied from compute_creds() */
+//		new_permitted = cap_intersect(bprm->cap_permitted, cap_bset);
+//		working = cap_intersect(bprm->cap_inheritable,
+//					current->cap_inheritable);
+//		new_permitted = cap_combine(new_permitted, working);
+//#endif
+//		if (!uid_eq(bprm->cred->euid,task_uid(current)) || !gid_eq(bprm->cred->egid, task_gid(current))
+//#ifndef CONFIG_MEDUSA_FILE_CAPABILITIES
+//		    || !cap_issubset(new_permitted, current->cap_permitted)
+//#endif
+//		   ) {
+//			if ((retval = medusa_sexec(bprm)) == MED_NO)
+//				return -EPERM;
+//			if (retval == MED_SKIP) {
+//				bprm->cred->euid = task_euid(current);
+//				bprm->cred->egid = task_egid(current);
+//#ifndef CONFIG_MEDUSA_FILE_CAPABILITIES
+//				cap_clear(bprm->cap_inheritable);
+//				bprm->cap_permitted = current->cap_permitted;
+//				bprm->cap_effective = current->cap_effective;
+//#endif
+//			}
+//		}
+//	}
+//	return 0;
 }
 
 static int medusa_l1_bprm_secureexec(struct linux_binprm *bprm)
@@ -1529,7 +1542,7 @@ void __init medusa_init(void);
 
 static int __init medusa_l1_init(void){
 	struct task_struct* process;
-	struct inode* inode;
+	//struct inode* inode; unused JK march 2015
 
 	/* register the hooks */	
 	if (!security_module_enable(&medusa_l1_ops)) {
@@ -1545,9 +1558,9 @@ static int __init medusa_l1_init(void){
 	medusa_init();
 
 	for_each_process(process) {
-		MEDUSA_CHECK(NULL);
         	struct medusa_l1_task_s* med;
         	struct cred* tmp;
+		MEDUSA_CHECK(NULL);
 
 		if (&task_security(process) != NULL) {
 			continue;

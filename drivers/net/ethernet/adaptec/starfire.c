@@ -285,7 +285,7 @@ enum chipset {
 	CH_6915 = 0,
 };
 
-static DEFINE_PCI_DEVICE_TABLE(starfire_pci_tbl) = {
+static const struct pci_device_id starfire_pci_tbl[] = {
 	{ PCI_VDEVICE(ADAPTEC, 0x6915), CH_6915 },
 	{ 0, }
 };
@@ -784,7 +784,7 @@ static int starfire_init_one(struct pci_dev *pdev,
 
 	dev->netdev_ops = &netdev_ops;
 	dev->watchdog_timeo = TX_TIMEOUT;
-	SET_ETHTOOL_OPS(dev, &ethtool_ops);
+	dev->ethtool_ops = &ethtool_ops;
 
 	netif_napi_add(dev, &np->napi, netdev_poll, max_interrupt_work);
 
@@ -1016,8 +1016,11 @@ static int netdev_open(struct net_device *dev)
 #endif /* VLAN_SUPPORT */
 
 	retval = request_firmware(&fw_rx, FIRMWARE_RX, &np->pci_dev->dev);
-	if (retval)
+	if (retval) {
+		printk(KERN_ERR "starfire: Failed to load firmware \"%s\"\n",
+		       FIRMWARE_RX);
 		goto out_init;
+	}
 	if (fw_rx->size % 4) {
 		printk(KERN_ERR "starfire: bogus length %zu in \"%s\"\n",
 		       fw_rx->size, FIRMWARE_RX);
@@ -1025,8 +1028,11 @@ static int netdev_open(struct net_device *dev)
 		goto out_rx;
 	}
 	retval = request_firmware(&fw_tx, FIRMWARE_TX, &np->pci_dev->dev);
-	if (retval)
+	if (retval) {
+		printk(KERN_ERR "starfire: Failed to load firmware \"%s\"\n",
+		       FIRMWARE_TX);
 		goto out_rx;
+	}
 	if (fw_tx->size % 4) {
 		printk(KERN_ERR "starfire: bogus length %zu in \"%s\"\n",
 		       fw_tx->size, FIRMWARE_TX);

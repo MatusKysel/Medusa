@@ -16,9 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the
- * Free Software Foundation, Inc.,
- * 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": %s: " fmt, __func__
@@ -95,6 +93,14 @@ static int nfc_genl_send_target(struct sk_buff *msg, struct nfc_target *target,
 	    nla_put(msg, NFC_ATTR_TARGET_SENSF_RES, target->sensf_res_len,
 		    target->sensf_res))
 		goto nla_put_failure;
+
+	if (target->is_iso15693) {
+		if (nla_put_u8(msg, NFC_ATTR_TARGET_ISO15693_DSFID,
+			       target->iso15693_dsfid) ||
+		    nla_put(msg, NFC_ATTR_TARGET_ISO15693_UID,
+			    sizeof(target->iso15693_uid), target->iso15693_uid))
+			goto nla_put_failure;
+	}
 
 	return genlmsg_end(msg, hdr);
 
@@ -804,6 +810,31 @@ out:
 	return rc;
 }
 
+static int nfc_genl_activate_target(struct sk_buff *skb, struct genl_info *info)
+{
+	struct nfc_dev *dev;
+	u32 device_idx, target_idx, protocol;
+	int rc;
+
+	if (!info->attrs[NFC_ATTR_DEVICE_INDEX])
+		return -EINVAL;
+
+	device_idx = nla_get_u32(info->attrs[NFC_ATTR_DEVICE_INDEX]);
+
+	dev = nfc_get_device(device_idx);
+	if (!dev)
+		return -ENODEV;
+
+	target_idx = nla_get_u32(info->attrs[NFC_ATTR_TARGET_INDEX]);
+	protocol = nla_get_u32(info->attrs[NFC_ATTR_PROTOCOLS]);
+
+	nfc_deactivate_target(dev, target_idx);
+	rc = nfc_activate_target(dev, target_idx, protocol);
+
+	nfc_put_device(dev);
+	return 0;
+}
+
 static int nfc_genl_dep_link_up(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nfc_dev *dev;
@@ -1279,6 +1310,51 @@ static int nfc_genl_dump_ses_done(struct netlink_callback *cb)
 	return 0;
 }
 
+static int nfc_se_io(struct nfc_dev *dev, u32 se_idx,
+		     u8 *apdu, size_t apdu_length,
+		     se_io_cb_t cb, void *cb_context)
+{
+	struct nfc_se *se;
+	int rc;
+
+	pr_debug("%s se index %d\n", dev_name(&dev->dev), se_idx);
+
+	device_lock(&dev->dev);
+
+	if (!device_is_registered(&dev->dev)) {
+		rc = -ENODEV;
+		goto error;
+	}
+
+	if (!dev->dev_up) {
+		rc = -ENODEV;
+		goto error;
+	}
+
+	if (!dev->ops->se_io) {
+		rc = -EOPNOTSUPP;
+		goto error;
+	}
+
+	se = nfc_find_se(dev, se_idx);
+	if (!se) {
+		rc = -EINVAL;
+		goto error;
+	}
+
+	if (se->state != NFC_SE_ENABLED) {
+		rc = -ENODEV;
+		goto error;
+	}
+
+	rc = dev->ops->se_io(dev, se_idx, apdu,
+			apdu_length, cb, cb_context);
+
+error:
+	device_unlock(&dev->dev);
+	return rc;
+}
+
 struct se_io_ctx {
 	u32 dev_idx;
 	u32 se_idx;
@@ -1361,7 +1437,7 @@ static int nfc_genl_se_io(struct sk_buff *skb, struct genl_info *info)
 	ctx->dev_idx = dev_idx;
 	ctx->se_idx = se_idx;
 
-	return dev->ops->se_io(dev, se_idx, apdu, apdu_len, se_io_cb, ctx);
+	return nfc_se_io(dev, se_idx, apdu, apdu_len, se_io_cb, ctx);
 }
 
 static const struct genl_ops nfc_genl_ops[] = {
@@ -1447,6 +1523,11 @@ static const struct genl_ops nfc_genl_ops[] = {
 	{
 		.cmd = NFC_CMD_SE_IO,
 		.doit = nfc_genl_se_io,
+		.policy = nfc_genl_policy,
+	},
+	{
+		.cmd = NFC_CMD_ACTIVATE_TARGET,
+		.doit = nfc_genl_activate_target,
 		.policy = nfc_genl_policy,
 	},
 };

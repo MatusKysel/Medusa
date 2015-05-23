@@ -23,7 +23,7 @@ medusa_answer_t medusa_read(struct file * file)
 {
 	struct dentry * dentry;
 
-	dentry = file->f_dentry;
+	dentry = file->f_path.dentry;
 	if (!dentry || IS_ERR(dentry))
 		return MED_OK;
 	if (!MED_MAGIC_VALID(&task_security(current)) &&
@@ -52,7 +52,7 @@ medusa_answer_t medusa_write(struct file * file)
 {
 	struct dentry * dentry;
 
-	dentry = file->f_dentry;
+	dentry = file->f_path.dentry;
 	if (!dentry || IS_ERR(dentry))
 		return MED_OK;
 	if (!MED_MAGIC_VALID(&task_security(current)) &&

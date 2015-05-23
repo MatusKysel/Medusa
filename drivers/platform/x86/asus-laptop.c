@@ -53,8 +53,7 @@
 #include <linux/rfkill.h>
 #include <linux/slab.h>
 #include <linux/dmi.h>
-#include <acpi/acpi_drivers.h>
-#include <acpi/acpi_bus.h>
+#include <linux/acpi.h>
 
 #define ASUS_LAPTOP_VERSION	"0.42"
 
@@ -844,8 +843,7 @@ static int asus_backlight_init(struct asus_laptop *asus)
 
 static void asus_backlight_exit(struct asus_laptop *asus)
 {
-	if (asus->backlight_device)
-		backlight_device_unregister(asus->backlight_device);
+	backlight_device_unregister(asus->backlight_device);
 	asus->backlight_device = NULL;
 }
 
@@ -1700,7 +1698,6 @@ static void asus_platform_exit(struct asus_laptop *asus)
 static struct platform_driver platform_driver = {
 	.driver = {
 		.name = ASUS_LAPTOP_FILE,
-		.owner = THIS_MODULE,
 	},
 };
 

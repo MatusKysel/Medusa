@@ -1151,20 +1151,15 @@ static int ttusb_dec_alloc_iso_urbs(struct ttusb_dec *dec)
 
 	dprintk("%s\n", __func__);
 
-	dec->iso_buffer = pci_alloc_consistent(NULL,
-					       ISO_FRAME_SIZE *
-					       (FRAMES_PER_ISO_BUF *
-						ISO_BUF_COUNT),
-					       &dec->iso_dma_handle);
+	dec->iso_buffer = pci_zalloc_consistent(NULL,
+						ISO_FRAME_SIZE * (FRAMES_PER_ISO_BUF * ISO_BUF_COUNT),
+						&dec->iso_dma_handle);
 
 	if (!dec->iso_buffer) {
 		dprintk("%s: pci_alloc_consistent - not enough memory\n",
 			__func__);
 		return -ENOMEM;
 	}
-
-	memset(dec->iso_buffer, 0,
-	       ISO_FRAME_SIZE * (FRAMES_PER_ISO_BUF * ISO_BUF_COUNT));
 
 	for (i = 0; i < ISO_BUF_COUNT; i++) {
 		struct urb *urb;
@@ -1302,8 +1297,11 @@ static int ttusb_dec_boot_dsp(struct ttusb_dec *dec)
 	dprintk("%s\n", __func__);
 
 	result = request_firmware(&fw_entry, dec->firmware_name, &dec->udev->dev);
-	if (result)
+	if (result) {
+		printk(KERN_ERR "%s: Firmware (%s) unavailable.\n",
+		       __func__, dec->firmware_name);
 		return result;
+	}
 
 	firmware = fw_entry->data;
 	firmware_size = fw_entry->size;

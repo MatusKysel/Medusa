@@ -16,7 +16,7 @@
 
 //#include <linux/medusa/l1/inode.h>
 #include <linux/fs.h>		/* contains all includes we need ;) */
-#include <linux/namei.h>
+#include <linux/path.h>
 #include <linux/binfmts.h>
 #include <linux/medusa/l3/kobject.h>
 #include <linux/medusa/l1/file_handlers.h>

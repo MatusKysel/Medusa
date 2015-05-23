@@ -18,7 +18,6 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/watchdog.h>
-#include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/device.h>
@@ -212,7 +211,6 @@ static struct platform_driver jz4740_wdt_driver = {
 	.remove = jz4740_wdt_remove,
 	.driver = {
 		.name = "jz4740-wdt",
-		.owner	= THIS_MODULE,
 	},
 };
 

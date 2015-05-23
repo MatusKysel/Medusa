@@ -1,7 +1,7 @@
-#!/bin/bash 
+#!/bin/bash
 
 if [[ "$1" == '-h' || "$1" == '--help' ]]; then
-	echo "$0 [--help] [--delete] [--clean]";
+	echo "$0 [--help] [--delete] [--clean] [--nogrub] [--noreboot]";
 	exit 0
 fi
 
@@ -14,15 +14,24 @@ DEST=`cat .dest`
 
 minor=0
 major=0
+GRUB=1
+REBOOT=1
 [ -f .minor ] && minor=`cat .minor`
 [ -f .major ] && major=`cat .major`
 echo $(($minor + 1)) > .minor
-if [[ "$1" == '--delete' || "$1" == '-delete' ]]; then
-	sudo find security/ -name '*.o' -delete
-	sudo find security/ -name '*.cmd' -delete
-elif [[ "$1" == '--clean' || "$1" == '-clean' ]]; then
-	sudo make clean
-fi
+
+for arg in "$@"; do
+	if [[ "$arg" == '--delete' || "$arg" == '-delete' ]]; then
+		sudo find security/ -name '*.o' -delete
+		sudo find security/ -name '*.cmd' -delete
+	elif [[ "$arg" == '--clean' || "$arg" == '-clean' ]]; then
+		sudo make clean
+	elif [[ "$arg" == '--nogrub' || "$arg" == '-nogrub' ]]; then
+		GRUB=0
+	elif [[ "$arg" == '--noreboot' || "$arg" == '-noreboot' ]]; then
+		REBOOT=0
+	fi
+done
 sudo rm vmlinux 2> /dev/null
 
 #make -j4
@@ -32,9 +41,10 @@ sudo rm vmlinux 2> /dev/null
 
 sudo rm -rf ../linux-image-*.deb
 
-export CONCURRENCY_LEVEL=4
+PROCESSORS=`cat /proc/cpuinfo | grep processor | wc -l`
+export CONCURRENCY_LEVEL=`expr $PROCESSORS + 1`
 #export CLEAN_SOURCE=no
-sudo make-kpkg --initrd --revision=1.2 --append_to_version medusa kernel_image
+fakeroot make-kpkg --initrd --revision=1.2 --append_to_version medusa kernel_image
 
 [ $? -ne 0 ] && exit 1
 
@@ -66,7 +76,8 @@ sudo cat /boot/grub/grub.cfg | while read line; do
 	fi
 done
 
-sudo mv $temp /boot/grub/grub.cfg
+
+[ $GRUB == 1 ] && sudo mv $temp /boot/grub/grub.cfg
 
 rm $temp 2> /dev/null
 
@@ -74,5 +85,5 @@ rm $temp 2> /dev/null
 #	wait $PID
 #fi
 
-sudo reboot
+[ $REBOOT == 1 ] && sudo reboot
 

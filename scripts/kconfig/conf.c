@@ -368,6 +368,7 @@ static void conf(struct menu *menu)
 		switch (prop->type) {
 		case P_MENU:
 			if ((input_mode == silentoldconfig ||
+			     input_mode == listnewconfig ||
 			     input_mode == olddefconfig) &&
 			    rootEntry != menu) {
 				check_conf(menu);
@@ -428,7 +429,11 @@ static void check_conf(struct menu *menu)
 	if (sym && !sym_has_value(sym)) {
 		if (sym_is_changable(sym) ||
 		    (sym_is_choice(sym) && sym_get_tristate_value(sym) == yes)) {
-			if (input_mode != olddefconfig) {
+			if (input_mode == listnewconfig) {
+				if (sym->name && !sym_is_choice_value(sym)) {
+					printf("%s%s\n", CONFIG_, sym->name);
+				}
+			} else if (input_mode != olddefconfig) {
 				if (!conf_cnt++)
 					printf(_("*\n* Restart config...\n*\n"));
 				rootEntry = menu_get_parent_menu(menu);
@@ -439,30 +444,6 @@ static void check_conf(struct menu *menu)
 
 	for (child = menu->list; child; child = child->next)
 		check_conf(child);
-}
-
-static void report_conf(struct menu *menu, bool verbose)
-{
-	struct symbol *sym;
-	struct menu *child;
-
-	if (!menu_is_visible(menu))
-		return;
-
-	if (verbose && menu == &rootmenu) {
-		printf("\n#\n"
-		       "# Changes:\n"
-		       "#\n");
-	}
-
-	sym = menu->sym;
-	if (sym && (sym->flags & SYMBOL_NEW) &&
-	    sym_is_changable(sym) && sym->name && !sym_is_choice_value(sym)) {
-		conf_write_new_symbol(stdout, sym, verbose);
-	}
-
-	for (child = menu->list; child; child = child->next)
-		report_conf(child, verbose);
 }
 
 static struct option long_opts[] = {
@@ -512,7 +493,6 @@ int main(int ac, char **av)
 	const char *progname = av[0];
 	int opt;
 	const char *name, *defconfig_file = NULL /* gcc uninit */;
-	const char *value;
 	struct stat tmpstat;
 
 	setlocale(LC_ALL, "");
@@ -688,18 +668,16 @@ int main(int ac, char **av)
 		input_mode = silentoldconfig;
 		/* fall through */
 	case oldconfig:
+	case listnewconfig:
 	case olddefconfig:
 	case silentoldconfig:
 		/* Update until a loop caused no more changes */
 		do {
 			conf_cnt = 0;
 			check_conf(&rootmenu);
-		} while (conf_cnt && input_mode != olddefconfig);
-		break;
-	case listnewconfig:
-		conf_set_all_new_symbols(def_default);
-		value = getenv("KBUILD_VERBOSE");
-		report_conf(&rootmenu, value && atoi(value));
+		} while (conf_cnt &&
+			 (input_mode != listnewconfig &&
+			  input_mode != olddefconfig));
 		break;
 	}
 
@@ -718,7 +696,7 @@ int main(int ac, char **av)
 	} else if (input_mode == savedefconfig) {
 		if (conf_write_defconfig(defconfig_file)) {
 			fprintf(stderr, _("n*** Error while saving defconfig to: %s\n\n"),
-			        defconfig_file);
+				defconfig_file);
 			return 1;
 		}
 	} else if (input_mode != listnewconfig) {

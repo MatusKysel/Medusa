@@ -35,7 +35,6 @@
 #include <linux/timer.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
-#include <linux/init.h>
 #include <linux/device.h>
 #include <linux/firmware.h>
 #include <linux/mutex.h>
@@ -1081,6 +1080,8 @@ static int cxacru_find_firmware(struct cxacru_data *instance,
 		usb_dbg(usbatm, "no stage %s firmware found\n", phase);
 		return -ENOENT;
 	}
+
+	usb_info(usbatm, "found firmware %s\n", buf);
 
 	return 0;
 }

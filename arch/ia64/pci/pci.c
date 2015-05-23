@@ -126,7 +126,6 @@ static struct pci_controller *alloc_pci_controller(int seg)
 		return NULL;
 
 	controller->segment = seg;
-	controller->node = -1;
 	return controller;
 }
 
@@ -430,19 +429,14 @@ struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
 	struct pci_root_info *info = NULL;
 	int busnum = root->secondary.start;
 	struct pci_bus *pbus;
-	int pxm, ret;
+	int ret;
 
 	controller = alloc_pci_controller(domain);
 	if (!controller)
 		return NULL;
 
 	controller->companion = device;
-
-	pxm = acpi_get_pxm(device->handle);
-#ifdef CONFIG_NUMA
-	if (pxm >= 0)
-		controller->node = pxm_to_node(pxm);
-#endif
+	controller->node = acpi_get_node(device->handle);
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info) {
@@ -493,45 +487,39 @@ int pcibios_root_bridge_prepare(struct pci_host_bridge *bridge)
 	return 0;
 }
 
-static int is_valid_resource(struct pci_dev *dev, int idx)
-{
-	unsigned int i, type_mask = IORESOURCE_IO | IORESOURCE_MEM;
-	struct resource *devr = &dev->resource[idx], *busr;
-
-	if (!dev->bus)
-		return 0;
-
-	pci_bus_for_each_resource(dev->bus, busr, i) {
-		if (!busr || ((busr->flags ^ devr->flags) & type_mask))
-			continue;
-		if ((devr->start) && (devr->start >= busr->start) &&
-				(devr->end <= busr->end))
-			return 1;
-	}
-	return 0;
-}
-
-static void pcibios_fixup_resources(struct pci_dev *dev, int start, int limit)
-{
-	int i;
-
-	for (i = start; i < limit; i++) {
-		if (!dev->resource[i].flags)
-			continue;
-		if ((is_valid_resource(dev, i)))
-			pci_claim_resource(dev, i);
-	}
-}
-
 void pcibios_fixup_device_resources(struct pci_dev *dev)
 {
-	pcibios_fixup_resources(dev, 0, PCI_BRIDGE_RESOURCES);
+	int idx;
+
+	if (!dev->bus)
+		return;
+
+	for (idx = 0; idx < PCI_BRIDGE_RESOURCES; idx++) {
+		struct resource *r = &dev->resource[idx];
+
+		if (!r->flags || r->parent || !r->start)
+			continue;
+
+		pci_claim_resource(dev, idx);
+	}
 }
 EXPORT_SYMBOL_GPL(pcibios_fixup_device_resources);
 
 static void pcibios_fixup_bridge_resources(struct pci_dev *dev)
 {
-	pcibios_fixup_resources(dev, PCI_BRIDGE_RESOURCES, PCI_NUM_RESOURCES);
+	int idx;
+
+	if (!dev->bus)
+		return;
+
+	for (idx = PCI_BRIDGE_RESOURCES; idx < PCI_NUM_RESOURCES; idx++) {
+		struct resource *r = &dev->resource[idx];
+
+		if (!r->flags || r->parent || !r->start)
+			continue;
+
+		pci_claim_bridge_resource(dev, idx);
+	}
 }
 
 /*

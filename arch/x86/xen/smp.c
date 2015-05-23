@@ -37,6 +37,7 @@
 #include <xen/hvc-console.h>
 #include "xen-ops.h"
 #include "mmu.h"
+#include "smp.h"
 
 cpumask_var_t xen_cpu_initialized_map;
 
@@ -73,9 +74,11 @@ static void cpu_bringup(void)
 	touch_softlockup_watchdog();
 	preempt_disable();
 
-	xen_enable_sysenter();
-	xen_enable_syscall();
-
+	/* PVH runs in ring 0 and allows us to do native syscalls. Yay! */
+	if (!xen_feature(XENFEAT_supervisor_mode_kernel)) {
+		xen_enable_sysenter();
+		xen_enable_syscall();
+	}
 	cpu = smp_processor_id();
 	smp_store_cpu_info(cpu);
 	cpu_data(cpu).x86_max_cores = 1;
@@ -97,8 +100,18 @@ static void cpu_bringup(void)
 	wmb();			/* make sure everything is out */
 }
 
-static void cpu_bringup_and_idle(void)
+/*
+ * Note: cpu parameter is only relevant for PVH. The reason for passing it
+ * is we can't do smp_processor_id until the percpu segments are loaded, for
+ * which we need the cpu number! So we pass it in rdi as first parameter.
+ */
+asmlinkage __visible void cpu_bringup_and_idle(int cpu)
 {
+#ifdef CONFIG_XEN_PVH
+	if (xen_feature(XENFEAT_auto_translated_physmap) &&
+	    xen_feature(XENFEAT_supervisor_mode_kernel))
+		xen_pvh_secondary_vcpu_init(cpu);
+#endif
 	cpu_bringup();
 	cpu_startup_entry(CPUHP_ONLINE);
 }
@@ -274,9 +287,10 @@ static void __init xen_smp_prepare_boot_cpu(void)
 	native_smp_prepare_boot_cpu();
 
 	if (xen_pv_domain()) {
-		/* We've switched to the "real" per-cpu gdt, so make sure the
-		   old memory can be recycled */
-		make_lowmem_page_readwrite(xen_initial_gdt);
+		if (!xen_feature(XENFEAT_writable_page_tables))
+			/* We've switched to the "real" per-cpu gdt, so make
+			 * sure the old memory can be recycled. */
+			make_lowmem_page_readwrite(xen_initial_gdt);
 
 #ifdef CONFIG_X86_32
 		/*
@@ -351,6 +365,8 @@ cpu_initialize_context(unsigned int cpu, struct task_struct *idle)
 	struct desc_struct *gdt;
 	unsigned long gdt_mfn;
 
+	/* used to tell cpu_init() that it can proceed with initialization */
+	cpumask_set_cpu(cpu, cpu_callout_mask);
 	if (cpumask_test_and_set_cpu(cpu, xen_cpu_initialized_map))
 		return 0;
 
@@ -360,22 +376,20 @@ cpu_initialize_context(unsigned int cpu, struct task_struct *idle)
 
 	gdt = get_cpu_gdt_table(cpu);
 
-	ctxt->flags = VGCF_IN_KERNEL;
-	ctxt->user_regs.ss = __KERNEL_DS;
 #ifdef CONFIG_X86_32
+	/* Note: PVH is not yet supported on x86_32. */
 	ctxt->user_regs.fs = __KERNEL_PERCPU;
 	ctxt->user_regs.gs = __KERNEL_STACK_CANARY;
-#else
-	ctxt->gs_base_kernel = per_cpu_offset(cpu);
 #endif
-	ctxt->user_regs.eip = (unsigned long)cpu_bringup_and_idle;
-
 	memset(&ctxt->fpu_ctxt, 0, sizeof(ctxt->fpu_ctxt));
 
-	{
+	if (!xen_feature(XENFEAT_auto_translated_physmap)) {
+		ctxt->user_regs.eip = (unsigned long)cpu_bringup_and_idle;
+		ctxt->flags = VGCF_IN_KERNEL;
 		ctxt->user_regs.eflags = 0x1000; /* IOPL_RING1 */
 		ctxt->user_regs.ds = __USER_DS;
 		ctxt->user_regs.es = __USER_DS;
+		ctxt->user_regs.ss = __KERNEL_DS;
 
 		xen_copy_trap_info(ctxt->trap_ctxt);
 
@@ -396,18 +410,30 @@ cpu_initialize_context(unsigned int cpu, struct task_struct *idle)
 #ifdef CONFIG_X86_32
 		ctxt->event_callback_cs     = __KERNEL_CS;
 		ctxt->failsafe_callback_cs  = __KERNEL_CS;
+#else
+		ctxt->gs_base_kernel = per_cpu_offset(cpu);
 #endif
 		ctxt->event_callback_eip    =
 					(unsigned long)xen_hypervisor_callback;
 		ctxt->failsafe_callback_eip =
 					(unsigned long)xen_failsafe_callback;
+		ctxt->user_regs.cs = __KERNEL_CS;
+		per_cpu(xen_cr3, cpu) = __pa(swapper_pg_dir);
 	}
-	ctxt->user_regs.cs = __KERNEL_CS;
+#ifdef CONFIG_XEN_PVH
+	else {
+		/*
+		 * The vcpu comes on kernel page tables which have the NX pte
+		 * bit set. This means before DS/SS is touched, NX in
+		 * EFER must be set. Hence the following assembly glue code.
+		 */
+		ctxt->user_regs.eip = (unsigned long)xen_pvh_early_cpu_init;
+		ctxt->user_regs.rdi = cpu;
+		ctxt->user_regs.rsi = true;  /* entry == true */
+	}
+#endif
 	ctxt->user_regs.esp = idle->thread.sp0 - sizeof(struct pt_regs);
-
-	per_cpu(xen_cr3, cpu) = __pa(swapper_pg_dir);
 	ctxt->ctrlreg[3] = xen_pfn_to_cr3(virt_to_mfn(swapper_pg_dir));
-
 	if (HYPERVISOR_vcpu_op(VCPUOP_initialise, cpu, ctxt))
 		BUG();
 
@@ -424,10 +450,11 @@ static int xen_cpu_up(unsigned int cpu, struct task_struct *idle)
 	irq_ctx_init(cpu);
 #else
 	clear_tsk_thread_flag(idle, TIF_FORK);
+#endif
 	per_cpu(kernel_stack, cpu) =
 		(unsigned long)task_stack_page(idle) -
 		KERNEL_STACK_OFFSET + THREAD_SIZE;
-#endif
+
 	xen_setup_runstate_info(cpu);
 	xen_setup_timer(cpu);
 	xen_init_lock_cpu(cpu);
@@ -483,6 +510,9 @@ static void xen_cpu_die(unsigned int cpu)
 		current->state = TASK_UNINTERRUPTIBLE;
 		schedule_timeout(HZ/10);
 	}
+
+	cpu_die_common(cpu);
+
 	xen_smp_intr_free(cpu);
 	xen_uninit_lock_cpu(cpu);
 	xen_teardown_timer(cpu);

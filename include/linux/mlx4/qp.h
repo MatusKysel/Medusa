@@ -56,7 +56,8 @@ enum mlx4_qp_optpar {
 	MLX4_QP_OPTPAR_RNR_RETRY		= 1 << 13,
 	MLX4_QP_OPTPAR_ACK_TIMEOUT		= 1 << 14,
 	MLX4_QP_OPTPAR_SCHED_QUEUE		= 1 << 16,
-	MLX4_QP_OPTPAR_COUNTER_INDEX		= 1 << 20
+	MLX4_QP_OPTPAR_COUNTER_INDEX		= 1 << 20,
+	MLX4_QP_OPTPAR_VLAN_STRIPPING		= 1 << 21,
 };
 
 enum mlx4_qp_state {
@@ -109,11 +110,17 @@ enum {
 	MLX4_RSS_TCP_IPV4			= 1 << 4,
 	MLX4_RSS_IPV4				= 1 << 5,
 
+	MLX4_RSS_BY_OUTER_HEADERS		= 0 << 6,
+	MLX4_RSS_BY_INNER_HEADERS		= 2 << 6,
+	MLX4_RSS_BY_INNER_HEADERS_IPONLY	= 3 << 6,
+
 	/* offset of mlx4_rss_context within mlx4_qp_context.pri_path */
 	MLX4_RSS_OFFSET_IN_QPC_PRI_PATH		= 0x24,
 	/* offset of being RSS indirection QP within mlx4_qp_context.flags */
 	MLX4_RSS_QPC_FLAG_OFFSET		= 13,
 };
+
+#define MLX4_EN_RSS_KEY_SIZE 40
 
 struct mlx4_rss_context {
 	__be32			base_qpn;
@@ -121,7 +128,7 @@ struct mlx4_rss_context {
 	u16			reserved;
 	u8			hash_fn;
 	u8			flags;
-	__be32			rss_key[10];
+	__be32			rss_key[MLX4_EN_RSS_KEY_SIZE / sizeof(__be32)];
 	__be32			base_qpn_udp;
 };
 
@@ -252,6 +259,8 @@ enum { /* param3 */
 
 enum {
 	MLX4_WQE_CTRL_NEC		= 1 << 29,
+	MLX4_WQE_CTRL_IIP		= 1 << 28,
+	MLX4_WQE_CTRL_ILP		= 1 << 27,
 	MLX4_WQE_CTRL_FENCE		= 1 << 6,
 	MLX4_WQE_CTRL_CQ_UPDATE		= 3 << 2,
 	MLX4_WQE_CTRL_SOLICITED		= 1 << 1,
@@ -264,9 +273,14 @@ enum {
 
 struct mlx4_wqe_ctrl_seg {
 	__be32			owner_opcode;
-	__be16			vlan_tag;
-	u8			ins_vlan;
-	u8			fence_size;
+	union {
+		struct {
+			__be16			vlan_tag;
+			u8			ins_vlan;
+			u8			fence_size;
+		};
+		__be32			bf_qpn;
+	};
 	/*
 	 * High 24 bits are SRC remote buffer; low 8 bits are flags:
 	 * [7]   SO (strong ordering)
@@ -410,6 +424,24 @@ struct mlx4_wqe_inline_seg {
 	__be32			byte_count;
 };
 
+enum mlx4_update_qp_attr {
+	MLX4_UPDATE_QP_SMAC		= 1 << 0,
+	MLX4_UPDATE_QP_VSD		= 1 << 2,
+	MLX4_UPDATE_QP_SUPPORTED_ATTRS	= (1 << 2) - 1
+};
+
+enum mlx4_update_qp_params_flags {
+	MLX4_UPDATE_QP_PARAMS_FLAGS_VSD_ENABLE		= 1 << 0,
+};
+
+struct mlx4_update_qp_params {
+	u8	smac_index;
+	u32	flags;
+};
+
+int mlx4_update_qp(struct mlx4_dev *dev, u32 qpn,
+		   enum mlx4_update_qp_attr attr,
+		   struct mlx4_update_qp_params *params);
 int mlx4_qp_modify(struct mlx4_dev *dev, struct mlx4_mtt *mtt,
 		   enum mlx4_qp_state cur_state, enum mlx4_qp_state new_state,
 		   struct mlx4_qp_context *context, enum mlx4_qp_optpar optpar,

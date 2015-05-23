@@ -13,8 +13,11 @@
  *  Copyright (c) 2007-2010 Paul Mundt <lethal@linux-sh.org>
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/export.h>
 #include <linux/mm.h>
+#include <linux/vmacache.h>
 #include <linux/mman.h>
 #include <linux/swap.h>
 #include <linux/file.h>
@@ -24,12 +27,14 @@
 #include <linux/vmalloc.h>
 #include <linux/blkdev.h>
 #include <linux/backing-dev.h>
+#include <linux/compiler.h>
 #include <linux/mount.h>
 #include <linux/personality.h>
 #include <linux/security.h>
 #include <linux/syscalls.h>
 #include <linux/audit.h>
 #include <linux/sched/sysctl.h>
+#include <linux/printk.h>
 
 #include <asm/uaccess.h>
 #include <asm/tlb.h>
@@ -54,12 +59,14 @@
 #endif
 
 void *high_memory;
+EXPORT_SYMBOL(high_memory);
 struct page *mem_map;
 unsigned long max_mapnr;
 unsigned long highest_memmap_pfn;
 struct percpu_counter vm_committed_as;
 int sysctl_overcommit_memory = OVERCOMMIT_GUESS; /* heuristic overcommit */
 int sysctl_overcommit_ratio = 50; /* default is 50% */
+unsigned long sysctl_overcommit_kbytes __read_mostly;
 int sysctl_max_map_count = DEFAULT_MAX_MAP_COUNT;
 int sysctl_nr_trim_pages = CONFIG_NOMMU_INITIAL_TRIM_EXCESS;
 unsigned long sysctl_user_reserve_kbytes __read_mostly = 1UL << 17; /* 128MB */
@@ -295,7 +302,7 @@ long vwrite(char *buf, char *addr, unsigned long count)
 		count = -(unsigned long) addr;
 
 	memcpy(addr, buf, count);
-	return(count);
+	return count;
 }
 
 /*
@@ -458,7 +465,7 @@ EXPORT_SYMBOL_GPL(vm_unmap_aliases);
  * Implement a stub for vmalloc_sync_all() if the architecture chose not to
  * have one.
  */
-void  __attribute__((weak)) vmalloc_sync_all(void)
+void __weak vmalloc_sync_all(void)
 {
 }
 
@@ -533,7 +540,7 @@ void __init mmap_init(void)
 {
 	int ret;
 
-	ret = percpu_counter_init(&vm_committed_as, 0);
+	ret = percpu_counter_init(&vm_committed_as, 0, GFP_KERNEL);
 	VM_BUG_ON(ret);
 	vm_region_jar = KMEM_CACHE(vm_region, SLAB_PANIC);
 }
@@ -652,7 +659,7 @@ static void __put_nommu_region(struct vm_region *region)
 		up_write(&nommu_region_sem);
 
 		if (region->vm_file)
-			vmr_fput(region);
+			fput(region->vm_file);
 
 		/* IO memory and memory shared directly out of the pagecache
 		 * from ramfs/tmpfs mustn't be released here */
@@ -716,11 +723,11 @@ static void add_vma_to_mm(struct mm_struct *mm, struct vm_area_struct *vma)
 	if (vma->vm_file) {
 		mapping = vma->vm_file->f_mapping;
 
-		mutex_lock(&mapping->i_mmap_mutex);
+		i_mmap_lock_write(mapping);
 		flush_dcache_mmap_lock(mapping);
 		vma_interval_tree_insert(vma, &mapping->i_mmap);
 		flush_dcache_mmap_unlock(mapping);
-		mutex_unlock(&mapping->i_mmap_mutex);
+		i_mmap_unlock_write(mapping);
 	}
 
 	/* add the VMA to the tree */
@@ -767,26 +774,33 @@ static void add_vma_to_mm(struct mm_struct *mm, struct vm_area_struct *vma)
  */
 static void delete_vma_from_mm(struct vm_area_struct *vma)
 {
+	int i;
 	struct address_space *mapping;
 	struct mm_struct *mm = vma->vm_mm;
+	struct task_struct *curr = current;
 
 	kenter("%p", vma);
 
 	protect_vma(vma, 0);
 
 	mm->map_count--;
-	if (mm->mmap_cache == vma)
-		mm->mmap_cache = NULL;
+	for (i = 0; i < VMACACHE_SIZE; i++) {
+		/* if the vma is cached, invalidate the entire cache */
+		if (curr->vmacache[i] == vma) {
+			vmacache_invalidate(mm);
+			break;
+		}
+	}
 
 	/* remove the VMA from the mapping */
 	if (vma->vm_file) {
 		mapping = vma->vm_file->f_mapping;
 
-		mutex_lock(&mapping->i_mmap_mutex);
+		i_mmap_lock_write(mapping);
 		flush_dcache_mmap_lock(mapping);
 		vma_interval_tree_remove(vma, &mapping->i_mmap);
 		flush_dcache_mmap_unlock(mapping);
-		mutex_unlock(&mapping->i_mmap_mutex);
+		i_mmap_unlock_write(mapping);
 	}
 
 	/* remove from the MM's tree and list */
@@ -810,7 +824,7 @@ static void delete_vma(struct mm_struct *mm, struct vm_area_struct *vma)
 	if (vma->vm_ops && vma->vm_ops->close)
 		vma->vm_ops->close(vma);
 	if (vma->vm_file)
-		vma_fput(vma);
+		fput(vma->vm_file);
 	put_nommu_region(vma->vm_region);
 	kmem_cache_free(vm_area_cachep, vma);
 }
@@ -824,8 +838,8 @@ struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
 	struct vm_area_struct *vma;
 
 	/* check the cache first */
-	vma = ACCESS_ONCE(mm->mmap_cache);
-	if (vma && vma->vm_start <= addr && vma->vm_end > addr)
+	vma = vmacache_find(mm, addr);
+	if (likely(vma))
 		return vma;
 
 	/* trawl the list (there may be multiple mappings in which addr
@@ -834,7 +848,7 @@ struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
 		if (vma->vm_start > addr)
 			return NULL;
 		if (vma->vm_end > addr) {
-			mm->mmap_cache = vma;
+			vmacache_update(addr, vma);
 			return vma;
 		}
 	}
@@ -873,8 +887,8 @@ static struct vm_area_struct *find_vma_exact(struct mm_struct *mm,
 	unsigned long end = addr + len;
 
 	/* check the cache first */
-	vma = mm->mmap_cache;
-	if (vma && vma->vm_start == addr && vma->vm_end == end)
+	vma = vmacache_find_exact(mm, addr, end);
+	if (vma)
 		return vma;
 
 	/* trawl the list (there may be multiple mappings in which addr
@@ -885,7 +899,7 @@ static struct vm_area_struct *find_vma_exact(struct mm_struct *mm,
 		if (vma->vm_start > addr)
 			return NULL;
 		if (vma->vm_end == end) {
-			mm->mmap_cache = vma;
+			vmacache_update(addr, vma);
 			return vma;
 		}
 	}
@@ -994,7 +1008,7 @@ static int validate_mmap_request(struct file *file,
 			    (file->f_mode & FMODE_WRITE))
 				return -EACCES;
 
-			if (locks_verify_locked(file_inode(file)))
+			if (locks_verify_locked(file))
 				return -EAGAIN;
 
 			if (!(capabilities & BDI_CAP_MAP_DIRECT))
@@ -1002,8 +1016,7 @@ static int validate_mmap_request(struct file *file,
 
 			/* we mustn't privatise shared mappings */
 			capabilities &= ~BDI_CAP_MAP_COPY;
-		}
-		else {
+		} else {
 			/* we're going to read the file into private memory we
 			 * allocate */
 			if (!(capabilities & BDI_CAP_MAP_COPY))
@@ -1034,23 +1047,20 @@ static int validate_mmap_request(struct file *file,
 		if (file->f_path.mnt->mnt_flags & MNT_NOEXEC) {
 			if (prot & PROT_EXEC)
 				return -EPERM;
-		}
-		else if ((prot & PROT_READ) && !(prot & PROT_EXEC)) {
+		} else if ((prot & PROT_READ) && !(prot & PROT_EXEC)) {
 			/* handle implication of PROT_EXEC by PROT_READ */
 			if (current->personality & READ_IMPLIES_EXEC) {
 				if (capabilities & BDI_CAP_EXEC_MAP)
 					prot |= PROT_EXEC;
 			}
-		}
-		else if ((prot & PROT_READ) &&
+		} else if ((prot & PROT_READ) &&
 			 (prot & PROT_EXEC) &&
 			 !(capabilities & BDI_CAP_EXEC_MAP)
 			 ) {
 			/* backing file is not executable, try to copy */
 			capabilities &= ~BDI_CAP_MAP_DIRECT;
 		}
-	}
-	else {
+	} else {
 		/* anonymous mappings are always memory backed and can be
 		 * privately mapped
 		 */
@@ -1140,8 +1150,7 @@ static int do_mmap_private(struct vm_area_struct *vma,
 			   unsigned long len,
 			   unsigned long capabilities)
 {
-	struct page *pages;
-	unsigned long total, point, n;
+	unsigned long total, point;
 	void *base;
 	int ret, order;
 
@@ -1173,33 +1182,23 @@ static int do_mmap_private(struct vm_area_struct *vma,
 	order = get_order(len);
 	kdebug("alloc order %d for %lx", order, len);
 
-	pages = alloc_pages(GFP_KERNEL, order);
-	if (!pages)
-		goto enomem;
-
 	total = 1 << order;
-	atomic_long_add(total, &mmap_pages_allocated);
-
 	point = len >> PAGE_SHIFT;
 
-	/* we allocated a power-of-2 sized page set, so we may want to trim off
-	 * the excess */
+	/* we don't want to allocate a power-of-2 sized page set */
 	if (sysctl_nr_trim_pages && total - point >= sysctl_nr_trim_pages) {
-		while (total > point) {
-			order = ilog2(total - point);
-			n = 1 << order;
-			kdebug("shave %lu/%lu @%lu", n, total - point, total);
-			atomic_long_sub(n, &mmap_pages_allocated);
-			total -= n;
-			set_page_refcounted(pages + total);
-			__free_pages(pages + total, order);
-		}
+		total = point;
+		kdebug("try to alloc exact %lu pages", total);
+		base = alloc_pages_exact(len, GFP_KERNEL);
+	} else {
+		base = (void *)__get_free_pages(GFP_KERNEL, order);
 	}
 
-	for (point = 1; point < total; point++)
-		set_page_refcounted(&pages[point]);
+	if (!base)
+		goto enomem;
 
-	base = page_address(pages);
+	atomic_long_add(total, &mmap_pages_allocated);
+
 	region->vm_flags = vma->vm_flags |= VM_MAPPED_COPY;
 	region->vm_start = (unsigned long) base;
 	region->vm_end   = region->vm_start + len;
@@ -1240,7 +1239,7 @@ error_free:
 	return ret;
 
 enomem:
-	printk("Allocation of length %lu from process %d (%s) failed\n",
+	pr_err("Allocation of length %lu from process %d (%s) failed\n",
 	       len, current->pid, current->comm);
 	show_free_areas(0);
 	return -ENOMEM;
@@ -1376,7 +1375,7 @@ unsigned long do_mmap_pgoff(struct file *file,
 					goto error_just_free;
 				}
 			}
-			vmr_fput(region);
+			fput(region->vm_file);
 			kmem_cache_free(vm_region_jar, region);
 			region = pregion;
 			result = start;
@@ -1452,10 +1451,10 @@ error_just_free:
 	up_write(&nommu_region_sem);
 error:
 	if (region->vm_file)
-		vmr_fput(region);
+		fput(region->vm_file);
 	kmem_cache_free(vm_region_jar, region);
 	if (vma->vm_file)
-		vma_fput(vma);
+		fput(vma->vm_file);
 	kmem_cache_free(vm_area_cachep, vma);
 	kleave(" = %d", ret);
 	return ret;
@@ -1658,7 +1657,7 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 	/* find the first potentially overlapping VMA */
 	vma = find_vma(mm, start);
 	if (!vma) {
-		static int limit = 0;
+		static int limit;
 		if (limit < 5) {
 			printk(KERN_WARNING
 			       "munmap of memory not mmapped by process %d"
@@ -1972,17 +1971,18 @@ error:
 	return -ENOMEM;
 }
 
-int in_gate_area_no_mm(unsigned long addr)
-{
-	return 0;
-}
-
 int filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	BUG();
 	return 0;
 }
 EXPORT_SYMBOL(filemap_fault);
+
+void filemap_map_pages(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	BUG();
+}
+EXPORT_SYMBOL(filemap_map_pages);
 
 int generic_file_remap_pages(struct vm_area_struct *vma, unsigned long addr,
 			     unsigned long size, pgoff_t pgoff)
@@ -2084,14 +2084,14 @@ int nommu_shrink_inode_mappings(struct inode *inode, size_t size,
 	high = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 
 	down_write(&nommu_region_sem);
-	mutex_lock(&inode->i_mapping->i_mmap_mutex);
+	i_mmap_lock_read(inode->i_mapping);
 
 	/* search for VMAs that fall within the dead zone */
 	vma_interval_tree_foreach(vma, &inode->i_mapping->i_mmap, low, high) {
 		/* found one - only interested if it's shared out of the page
 		 * cache */
 		if (vma->vm_flags & VM_SHARED) {
-			mutex_unlock(&inode->i_mapping->i_mmap_mutex);
+			i_mmap_unlock_read(inode->i_mapping);
 			up_write(&nommu_region_sem);
 			return -ETXTBSY; /* not quite true, but near enough */
 		}
@@ -2103,8 +2103,7 @@ int nommu_shrink_inode_mappings(struct inode *inode, size_t size,
 	 * we don't check for any regions that start beyond the EOF as there
 	 * shouldn't be any
 	 */
-	vma_interval_tree_foreach(vma, &inode->i_mapping->i_mmap,
-				  0, ULONG_MAX) {
+	vma_interval_tree_foreach(vma, &inode->i_mapping->i_mmap, 0, ULONG_MAX) {
 		if (!(vma->vm_flags & VM_SHARED))
 			continue;
 
@@ -2119,7 +2118,7 @@ int nommu_shrink_inode_mappings(struct inode *inode, size_t size,
 		}
 	}
 
-	mutex_unlock(&inode->i_mapping->i_mmap_mutex);
+	i_mmap_unlock_read(inode->i_mapping);
 	up_write(&nommu_region_sem);
 	return 0;
 }

@@ -315,8 +315,10 @@ static int sp8870_init (struct dvb_frontend* fe)
 
 	/* request the firmware, this will block until someone uploads it */
 	printk("sp8870: waiting for firmware upload (%s)...\n", SP8870_DEFAULT_FIRMWARE);
-	if (state->config->request_firmware(fe, &fw, SP8870_DEFAULT_FIRMWARE))
+	if (state->config->request_firmware(fe, &fw, SP8870_DEFAULT_FIRMWARE)) {
+		printk("sp8870: no firmware upload (timeout or file not found?)\n");
 		return -EIO;
+	}
 
 	if (sp8870_firmware_upload(state, fw)) {
 		printk("sp8870: writing firmware to device failed\n");
@@ -392,8 +394,7 @@ static int sp8870_read_ber (struct dvb_frontend* fe, u32 * ber)
 	if (ret < 0)
 		return -EIO;
 
-	 tmp = ret << 6;
-
+	tmp = ret << 6;
 	if (tmp >= 0x3FFF0)
 		tmp = ~0;
 

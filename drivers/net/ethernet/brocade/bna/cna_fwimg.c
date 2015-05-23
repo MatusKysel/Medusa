@@ -30,8 +30,10 @@ cna_read_firmware(struct pci_dev *pdev, u32 **bfi_image,
 {
 	const struct firmware *fw;
 
-	if (request_firmware(&fw, fw_name, &pdev->dev))
+	if (request_firmware(&fw, fw_name, &pdev->dev)) {
+		pr_alert("Can't locate firmware %s\n", fw_name);
 		goto error;
+	}
 
 	*bfi_image = (u32 *)fw->data;
 	*bfi_image_size = fw->size/sizeof(u32);
@@ -66,10 +68,8 @@ bfa_cb_image_get_chunk(enum bfi_asic_gen asic_gen, u32 off)
 	switch (asic_gen) {
 	case BFI_ASIC_GEN_CT:
 		return (bfi_image_ct_cna + off);
-		break;
 	case BFI_ASIC_GEN_CT2:
 		return (bfi_image_ct2_cna + off);
-		break;
 	default:
 		return NULL;
 	}
@@ -81,10 +81,8 @@ bfa_cb_image_get_size(enum bfi_asic_gen asic_gen)
 	switch (asic_gen) {
 	case BFI_ASIC_GEN_CT:
 		return bfi_image_ct_cna_size;
-		break;
 	case BFI_ASIC_GEN_CT2:
 		return bfi_image_ct2_cna_size;
-		break;
 	default:
 		return 0;
 	}

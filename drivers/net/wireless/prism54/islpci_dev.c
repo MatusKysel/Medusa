@@ -13,8 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  */
 
@@ -93,9 +92,12 @@ isl_upload_firmware(islpci_private *priv)
 		const u32 *fw_ptr;
 
 		rc = request_firmware(&fw_entry, priv->firmware, PRISM_FW_PDEV);
-		if (rc)
+		if (rc) {
+			printk(KERN_ERR
+			       "%s: request_firmware() failed for '%s'\n",
+			       "prism54", priv->firmware);
 			return rc;
-
+		}
 		/* prepare the Direct Memory Base register */
 		reg = ISL38XX_DEV_FIRMWARE_ADDRES;
 
@@ -911,7 +913,6 @@ islpci_setup(struct pci_dev *pdev)
       do_islpci_free_memory:
 	islpci_free_memory(priv);
       do_free_netdev:
-	pci_set_drvdata(pdev, NULL);
 	free_netdev(ndev);
 	priv = NULL;
 	return NULL;

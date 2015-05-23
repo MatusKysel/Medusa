@@ -61,7 +61,6 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
-#include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/mm.h>
 #include <linux/highmem.h>
@@ -132,7 +131,7 @@
 #define PCI_DEVICE_ID_SGI_ACENIC	0x0009
 #endif
 
-static DEFINE_PCI_DEVICE_TABLE(acenic_pci_tbl) = {
+static const struct pci_device_id acenic_pci_tbl[] = {
 	{ PCI_VENDOR_ID_ALTEON, PCI_DEVICE_ID_ALTEON_ACENIC_FIBRE,
 	  PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_NETWORK_ETHERNET << 8, 0xffff00, },
 	{ PCI_VENDOR_ID_ALTEON, PCI_DEVICE_ID_ALTEON_ACENIC_COPPER,
@@ -477,7 +476,7 @@ static int acenic_probe_one(struct pci_dev *pdev,
 	dev->watchdog_timeo = 5*HZ;
 
 	dev->netdev_ops = &ace_netdev_ops;
-	SET_ETHTOOL_OPS(dev, &ace_ethtool_ops);
+	dev->ethtool_ops = &ace_ethtool_ops;
 
 	/* we only display this string ONCE */
 	if (!boards_found)
@@ -2889,8 +2888,11 @@ static int ace_load_firmware(struct net_device *dev)
 		fw_name = "acenic/tg1.bin";
 
 	ret = request_firmware(&fw, fw_name, &ap->pdev->dev);
-	if (ret)
+	if (ret) {
+		printk(KERN_ERR "%s: Failed to load firmware \"%s\"\n",
+		       ap->name, fw_name);
 		return ret;
+	}
 
 	fw_data = (void *)fw->data;
 

@@ -12,7 +12,6 @@
 #include <linux/i2c-mux.h>
 #include <linux/i2c-mux-gpio.h>
 #include <linux/platform_device.h>
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/gpio.h>
@@ -281,7 +280,6 @@ static struct platform_driver i2c_mux_gpio_driver = {
 	.probe	= i2c_mux_gpio_probe,
 	.remove	= i2c_mux_gpio_remove,
 	.driver	= {
-		.owner	= THIS_MODULE,
 		.name	= "i2c-mux-gpio",
 		.of_match_table = i2c_mux_gpio_of_match,
 	},

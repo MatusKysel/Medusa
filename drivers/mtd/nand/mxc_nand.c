@@ -280,14 +280,10 @@ static void memcpy32_fromio(void *trg, const void __iomem  *src, size_t size)
 		*t++ = __raw_readl(s++);
 }
 
-static void memcpy32_toio(void __iomem *trg, const void *src, int size)
+static inline void memcpy32_toio(void __iomem *trg, const void *src, int size)
 {
-	int i;
-	u32 __iomem *t = trg;
-	const u32 *s = src;
-
-	for (i = 0; i < (size >> 2); i++)
-		__raw_writel(*s++, t++);
+	/* __iowrite32_copy use 32bit size values so divide by 4 */
+	__iowrite32_copy(trg, src, size / 4);
 }
 
 static int check_int_v3(struct mxc_nand_host *host)
@@ -1399,12 +1395,15 @@ static int mxcnd_probe(struct platform_device *pdev)
 	int err = 0;
 
 	/* Allocate memory for MTD device structure and private data */
-	host = devm_kzalloc(&pdev->dev, sizeof(struct mxc_nand_host) +
-			NAND_MAX_PAGESIZE + NAND_MAX_OOBSIZE, GFP_KERNEL);
+	host = devm_kzalloc(&pdev->dev, sizeof(struct mxc_nand_host),
+			GFP_KERNEL);
 	if (!host)
 		return -ENOMEM;
 
-	host->data_buf = (uint8_t *)(host + 1);
+	/* allocate a temporary buffer for the nand_scan_ident() */
+	host->data_buf = devm_kzalloc(&pdev->dev, PAGE_SIZE, GFP_KERNEL);
+	if (!host->data_buf)
+		return -ENOMEM;
 
 	host->dev = &pdev->dev;
 	/* structures must be linked */
@@ -1498,6 +1497,8 @@ static int mxcnd_probe(struct platform_device *pdev)
 	init_completion(&host->op_completion);
 
 	host->irq = platform_get_irq(pdev, 0);
+	if (host->irq < 0)
+		return host->irq;
 
 	/*
 	 * Use host->devtype_data->irq_control() here instead of irq_control()
@@ -1511,7 +1512,9 @@ static int mxcnd_probe(struct platform_device *pdev)
 	if (err)
 		return err;
 
-	clk_prepare_enable(host->clk);
+	err = clk_prepare_enable(host->clk);
+	if (err)
+		return err;
 	host->clk_act = 1;
 
 	/*
@@ -1527,6 +1530,15 @@ static int mxcnd_probe(struct platform_device *pdev)
 	/* first scan to find the device and get the page size */
 	if (nand_scan_ident(mtd, is_imx25_nfc(host) ? 4 : 1, NULL)) {
 		err = -ENXIO;
+		goto escan;
+	}
+
+	/* allocate the right size buffer now */
+	devm_kfree(&pdev->dev, (void *)host->data_buf);
+	host->data_buf = devm_kzalloc(&pdev->dev, mtd->writesize + mtd->oobsize,
+					GFP_KERNEL);
+	if (!host->data_buf) {
+		err = -ENOMEM;
 		goto escan;
 	}
 
@@ -1575,6 +1587,8 @@ static int mxcnd_remove(struct platform_device *pdev)
 	struct mxc_nand_host *host = platform_get_drvdata(pdev);
 
 	nand_release(&host->mtd);
+	if (host->clk_act)
+		clk_disable_unprepare(host->clk);
 
 	return 0;
 }
@@ -1582,7 +1596,6 @@ static int mxcnd_remove(struct platform_device *pdev)
 static struct platform_driver mxcnd_driver = {
 	.driver = {
 		   .name = DRIVER_NAME,
-		   .owner = THIS_MODULE,
 		   .of_match_table = of_match_ptr(mxcnd_dt_ids),
 	},
 	.id_table = mxcnd_devtype,

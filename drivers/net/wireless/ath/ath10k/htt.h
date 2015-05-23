@@ -20,6 +20,8 @@
 
 #include <linux/bug.h>
 #include <linux/interrupt.h>
+#include <linux/dmapool.h>
+#include <net/mac80211.h>
 
 #include "htc.h"
 #include "rx_desc.h"
@@ -124,6 +126,7 @@ enum htt_data_tx_ext_tid {
  *                  (HL hosts manage queues on the host )
  *       more_in_batch: only for HL hosts. indicates if more packets are
  *                      pending. this allows target to wait and aggregate
+ *       freq: 0 means home channel of given vdev. intended for offchannel
  */
 struct htt_data_tx_desc {
 	u8 flags0; /* %HTT_DATA_TX_DESC_FLAGS0_ */
@@ -131,7 +134,8 @@ struct htt_data_tx_desc {
 	__le16 len;
 	__le16 id;
 	__le32 frags_paddr;
-	__le32 peerid;
+	__le16 peerid;
+	__le16 freq;
 	u8 prefetch[0]; /* start of frame, for FW classification engine */
 } __packed;
 
@@ -153,6 +157,9 @@ enum htt_rx_ring_flags {
 	HTT_RX_RING_FLAGS_NULL_RX      = 1 << 14,
 	HTT_RX_RING_FLAGS_PHY_DATA_RX  = 1 << 15
 };
+
+#define HTT_RX_RING_SIZE_MIN 128
+#define HTT_RX_RING_SIZE_MAX 2048
 
 struct htt_rx_ring_setup_ring {
 	__le32 fw_idx_shadow_reg_paddr;
@@ -238,16 +245,10 @@ struct htt_oob_sync_req {
 	__le16 rsvd0;
 } __packed;
 
-#define HTT_AGGR_CONF_MAX_NUM_AMSDU_SUBFRAMES_MASK 0x1F
-#define HTT_AGGR_CONF_MAX_NUM_AMSDU_SUBFRAMES_LSB  0
-
 struct htt_aggr_conf {
 	u8 max_num_ampdu_subframes;
-	union {
-		/* dont use bitfields; undefined behaviour */
-		u8 flags; /* see %HTT_AGGR_CONF_MAX_NUM_AMSDU_SUBFRAMES_ */
-		u8 max_num_amsdu_subframes:5;
-	} __packed;
+	/* amsdu_subframes is limited by 0x1F mask */
+	u8 max_num_amsdu_subframes;
 } __packed;
 
 #define HTT_MGMT_FRM_HDR_DOWNLOAD_LEN 32
@@ -268,7 +269,6 @@ enum htt_mgmt_tx_status {
 };
 
 /*=== target -> host messages ===============================================*/
-
 
 enum htt_t2h_msg_type {
 	HTT_T2H_MSG_TYPE_VERSION_CONF		= 0x0,
@@ -730,7 +730,7 @@ static inline u8 *htt_rx_test_get_chars(struct htt_rx_test *rx_test)
  */
 struct htt_pktlog_msg {
 	u8 pad[3];
-	__le32 payload[1 /* or more */];
+	u8 payload[0];
 } __packed;
 
 struct htt_dbg_stats_rx_reorder_stats {
@@ -1036,6 +1036,7 @@ static inline struct htt_stats_conf_item *htt_stats_conf_next_item(
 {
 	return (void *)item + sizeof(*item) + roundup(item->length, 4);
 }
+
 /*
  * host -> target FRAG DESCRIPTOR/MSDU_EXT DESC bank
  *
@@ -1152,7 +1153,6 @@ struct htt_resp {
 	};
 } __packed;
 
-
 /*** host side structures follow ***/
 
 struct htt_tx_done {
@@ -1171,18 +1171,12 @@ struct htt_peer_unmap_event {
 	u16 peer_id;
 };
 
-struct htt_rx_info {
-	struct sk_buff *skb;
-	enum htt_rx_mpdu_status status;
-	enum htt_rx_mpdu_encrypt_type encrypt_type;
-	s8 signal;
-	struct {
-		u8 info0;
-		u32 info1;
-		u32 info2;
-	} rate;
-	bool fcs_err;
-};
+struct ath10k_htt_txbuf {
+	struct htt_data_tx_desc_frag frags[2];
+	struct ath10k_htc_hdr htc_hdr;
+	struct htt_cmd_hdr cmd_hdr;
+	struct htt_data_tx_desc cmd_tx;
+} __packed;
 
 struct ath10k_htt {
 	struct ath10k *ar;
@@ -1265,11 +1259,21 @@ struct ath10k_htt {
 	struct sk_buff **pending_tx;
 	unsigned long *used_msdu_ids; /* bitmap */
 	wait_queue_head_t empty_tx_wq;
+	struct dma_pool *tx_pool;
 
 	/* set if host-fw communication goes haywire
 	 * used to avoid further failures */
 	bool rx_confused;
 	struct tasklet_struct rx_replenish_task;
+
+	/* This is used to group tx/rx completions separately and process them
+	 * in batches to reduce cache stalls */
+	struct tasklet_struct txrx_compl_task;
+	struct sk_buff_head tx_compl_q;
+	struct sk_buff_head rx_compl_q;
+
+	/* rx_status template */
+	struct ieee80211_rx_status rx_status;
 };
 
 #define RX_HTT_HDR_STATUS_LEN 64
@@ -1322,23 +1326,29 @@ struct htt_rx_desc {
 #define HTT_LOG2_MAX_CACHE_LINE_SIZE 7	/* 2^7 = 128 */
 #define HTT_MAX_CACHE_LINE_SIZE_MASK ((1 << HTT_LOG2_MAX_CACHE_LINE_SIZE) - 1)
 
-int ath10k_htt_attach(struct ath10k *ar);
-int ath10k_htt_attach_target(struct ath10k_htt *htt);
-void ath10k_htt_detach(struct ath10k_htt *htt);
+int ath10k_htt_connect(struct ath10k_htt *htt);
+int ath10k_htt_init(struct ath10k *ar);
+int ath10k_htt_setup(struct ath10k_htt *htt);
 
-int ath10k_htt_tx_attach(struct ath10k_htt *htt);
-void ath10k_htt_tx_detach(struct ath10k_htt *htt);
-int ath10k_htt_rx_attach(struct ath10k_htt *htt);
-void ath10k_htt_rx_detach(struct ath10k_htt *htt);
+int ath10k_htt_tx_alloc(struct ath10k_htt *htt);
+void ath10k_htt_tx_free(struct ath10k_htt *htt);
+
+int ath10k_htt_rx_alloc(struct ath10k_htt *htt);
+void ath10k_htt_rx_free(struct ath10k_htt *htt);
+
 void ath10k_htt_htc_tx_complete(struct ath10k *ar, struct sk_buff *skb);
 void ath10k_htt_t2h_msg_handler(struct ath10k *ar, struct sk_buff *skb);
 int ath10k_htt_h2t_ver_req_msg(struct ath10k_htt *htt);
 int ath10k_htt_h2t_stats_req(struct ath10k_htt *htt, u8 mask, u64 cookie);
 int ath10k_htt_send_rx_ring_cfg_ll(struct ath10k_htt *htt);
+int ath10k_htt_h2t_aggr_cfg_msg(struct ath10k_htt *htt,
+				u8 max_subfrms_ampdu,
+				u8 max_subfrms_amsdu);
 
 void __ath10k_htt_tx_dec_pending(struct ath10k_htt *htt);
 int ath10k_htt_tx_alloc_msdu_id(struct ath10k_htt *htt);
 void ath10k_htt_tx_free_msdu_id(struct ath10k_htt *htt, u16 msdu_id);
 int ath10k_htt_mgmt_tx(struct ath10k_htt *htt, struct sk_buff *);
 int ath10k_htt_tx(struct ath10k_htt *htt, struct sk_buff *);
+
 #endif

@@ -475,8 +475,11 @@ static int qlogicpti_load_firmware(struct qlogicpti *qpti)
 	int i, timeout;
 
 	err = request_firmware(&fw, fwname, &qpti->op->dev);
-	if (err)
+	if (err) {
+		printk(KERN_ERR "Failed to load image \"%s\" err %d\n",
+		       fwname, err);
 		return err;
+	}
 	if (fw->size % 2) {
 		printk(KERN_ERR "Bogus length %zu in image \"%s\"\n",
 		       fw->size, fwname);
@@ -956,7 +959,7 @@ static inline void update_can_queue(struct Scsi_Host *host, u_int in_ptr, u_int 
 	/* Temporary workaround until bug is found and fixed (one bug has been found
 	   already, but fixing it makes things even worse) -jj */
 	int num_free = QLOGICPTI_REQ_QUEUE_LEN - REQ_QUEUE_DEPTH(in_ptr, out_ptr) - 64;
-	host->can_queue = host->host_busy + num_free;
+	host->can_queue = atomic_read(&host->host_busy) + num_free;
 	host->sg_tablesize = QLOGICPTI_MAX_SG(num_free);
 }
 
@@ -1452,7 +1455,6 @@ MODULE_DEVICE_TABLE(of, qpti_match);
 static struct platform_driver qpti_sbus_driver = {
 	.driver = {
 		.name = "qpti",
-		.owner = THIS_MODULE,
 		.of_match_table = qpti_match,
 	},
 	.probe		= qpti_sbus_probe,

@@ -35,7 +35,7 @@ typedef struct {
 			u_int32_t what;
 		} put32;
 		struct {
-			void* what;
+			MCPptr_t what;
 		} putPtr;
 		struct {
 			unsigned char * from;

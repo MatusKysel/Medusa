@@ -135,7 +135,7 @@ mISDN_sock_recvmsg(struct kiocb *iocb, struct socket *sock,
 		return err;
 
 	if (msg->msg_name) {
-		struct sockaddr_mISDN *maddr = msg->msg_name;
+		DECLARE_SOCKADDR(struct sockaddr_mISDN *, maddr, msg->msg_name);
 
 		maddr->family = AF_ISDN;
 		maddr->dev = _pms(sk)->dev->id;
@@ -163,7 +163,7 @@ mISDN_sock_recvmsg(struct kiocb *iocb, struct socket *sock,
 	memcpy(skb_push(skb, MISDN_HEADER_LEN), mISDN_HEAD_P(skb),
 	       MISDN_HEADER_LEN);
 
-	err = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
+	err = skb_copy_datagram_msg(skb, 0, msg, copied);
 
 	mISDN_sock_cmsg(sk, msg, skb);
 
@@ -179,7 +179,6 @@ mISDN_sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 	struct sock		*sk = sock->sk;
 	struct sk_buff		*skb;
 	int			err = -ENOMEM;
-	struct sockaddr_mISDN	*maddr;
 
 	if (*debug & DEBUG_SOCKET)
 		printk(KERN_DEBUG "%s: len %d flags %x ch %d proto %x\n",
@@ -204,7 +203,7 @@ mISDN_sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 	if (!skb)
 		goto done;
 
-	if (memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len)) {
+	if (memcpy_from_msg(skb_put(skb, len), msg, len)) {
 		err = -EFAULT;
 		goto done;
 	}
@@ -214,7 +213,7 @@ mISDN_sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 
 	if (msg->msg_namelen >= sizeof(struct sockaddr_mISDN)) {
 		/* if we have a address, we use it */
-		maddr = (struct sockaddr_mISDN *)msg->msg_name;
+		DECLARE_SOCKADDR(struct sockaddr_mISDN *, maddr, msg->msg_name);
 		mISDN_HEAD_ID(skb) = maddr->channel;
 	} else { /* use default for L2 messages */
 		if ((sk->sk_protocol == ISDN_P_LAPD_TE) ||

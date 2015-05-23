@@ -12,7 +12,6 @@
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
@@ -281,7 +280,6 @@ static struct platform_driver i2c_pca_pf_driver = {
 	.remove = i2c_pca_pf_remove,
 	.driver = {
 		.name = "i2c-pca-platform",
-		.owner = THIS_MODULE,
 	},
 };
 
