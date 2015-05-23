@@ -12,13 +12,8 @@
  * facts about them.
  */
 
-union MCPptr_u {
-    void* ptr;
-    uint64_t data;
-};
-typedef union MCPptr_u MCPptr_t; // medusa common protocol pointer type this is here because we wanna have one protocol for all architectures JK March 2015
-
-#pragma pack(push,1)
+typedef uint64_t MCPptr_t; // medusa common protocol pointer type this is here because we wanna have one protocol for all architectures JK March 2015
+typedef uint64_t Mptr_t; // medusa pointer if you want to run effectivly medusa you should use something like coid* :) for debuggin purposes you should use mcptr_t :) JK March 2015
 
 /* version of this communication protocol */
 #define MEDUSA_COMM_VERSION	1
@@ -46,12 +41,14 @@ typedef union MCPptr_u MCPptr_t; // medusa common protocol pointer type this is 
 #define MEDUSA_COMM_UPDATE_REQUEST	0x8a	/* c->k */
 #define MEDUSA_COMM_UPDATE_ANSWER	0x0a	/* k->c */
 
+#pragma pack(push,1)
 struct medusa_comm_attribute_s {
 	u_int16_t offset;			/* offset of attribute in object */
 	u_int16_t length;			/* bytes consumed by data */
 	u_int8_t type;				/* data type (MED_COMM_TYPE_xxx) */
 	char name[MEDUSA_COMM_ATTRNAME_MAX];	/* string: attribute name */
 };
+#pragma pack(pop)
 
 #define	MED_COMM_TYPE_END		0x00	/* end of attribute list */
 #define	MED_COMM_TYPE_UNSIGNED		0x01	/* unsigned integer attr */
@@ -62,12 +59,15 @@ struct medusa_comm_attribute_s {
 #define	MED_COMM_TYPE_READ_ONLY		0x80	/* this attribute is read-only */
 #define	MED_COMM_TYPE_PRIMARY_KEY	0x40	/* this attribute is used to lookup object */
 
+#pragma pack(push,1)
 struct medusa_comm_kclass_s {
 	MCPptr_t kclassid;	/* unique identifier of this kclass */
 	u_int16_t	size;		/* size of object */
 	char		name[MEDUSA_COMM_KCLASSNAME_MAX];
 };
+#pragma pack(pop)
 
+#pragma pack(push,1)
 struct medusa_comm_evtype_s {
 	MCPptr_t evid;
 	u_int16_t	size;

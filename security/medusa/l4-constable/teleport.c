@@ -78,7 +78,7 @@ ssize_t teleport_cycle(teleport_t * teleport, size_t userlimit)
 				break;
 			case tp_PUTKCLASS:
 				teleport->u.putkclass.cl.kclassid =
-					(MCPptr_t)(void*)teleport->ip->args.putkclass.kclassdef; // possiblity for encryption .. JK note march 2015
+					(MCPptr_t)teleport->ip->args.putkclass.kclassdef; // possiblity for encryption .. JK note march 2015
 				teleport->u.putkclass.cl.size =
 					teleport->ip->args.putkclass.kclassdef->kobject_size;
 				memcpy(teleport->u.putkclass.cl.name,
@@ -89,13 +89,13 @@ ssize_t teleport_cycle(teleport_t * teleport, size_t userlimit)
 				teleport->remaining =
 					sizeof(struct medusa_comm_kclass_s);
 #ifdef DEBUG
-				MED_PRINTF("-> class %s [%16llx]\n", teleport->u.putkclass.cl.name,
-						teleport->u.putkclass.cl.kclassid.data);
+				MED_PRINTF("-> class %s [%p]\n", teleport->u.putkclass.cl.name,
+						(void*)teleport->u.putkclass.cl.kclassid);
 #endif
 				break;
 			case tp_PUTEVTYPE:
 				teleport->u.putevtype.ev.evid =
-					(MCPptr_t)(void*)teleport->ip->args.putevtype.evtypedef; // possibility for encryption ... JK note March 2015
+					(MCPptr_t)teleport->ip->args.putevtype.evtypedef; // possibility for encryption ... JK note March 2015
 				teleport->u.putevtype.ev.size =
 					teleport->ip->args.putevtype.evtypedef->event_size;
 				teleport->u.putevtype.ev.actbit =
@@ -109,10 +109,10 @@ ssize_t teleport_cycle(teleport_t * teleport, size_t userlimit)
 					(MCPptr_t)teleport->ip->args.putevtype.evtypedef->arg_kclass[1]; // possibility for encryption ... JK note March 2015
 
 #ifdef DEBUG
-				MED_PRINTF("-> evtype %s [%8llx] with [%8llx] and [%8llx]\n", teleport->u.putevtype.ev.name,
-					teleport->u.putevtype.ev.evid.data,
-					teleport->u.putevtype.ev.ev_kclass[0].data,
-					teleport->u.putevtype.ev.ev_kclass[1].data
+				MED_PRINTF("-> evtype %s [%p] with [%p] and [%p]\n", teleport->u.putevtype.ev.name,
+					(void*)teleport->u.putevtype.ev.evid,
+					(void*)teleport->u.putevtype.ev.ev_kclass[0],
+					(void*)teleport->u.putevtype.ev.ev_kclass[1]
 				);
 #endif
 

@@ -306,9 +306,9 @@ feed_lions:
 
 
         /* question_ready */
-#define decision_evtype ((struct medusa_evtype_s*)decision_event->evtype_id.ptr)
+#define decision_evtype (decision_event->evtype_id)
 	tele_mem[0].opcode = tp_PUTPtr;
-	tele_mem[0].args.putPtr.what = decision_event->evtype_id; // possibility to encryption JK march 2015
+	tele_mem[0].args.putPtr.what = (MCPptr_t)decision_evtype; // possibility to encryption JK march 2015
 	tele_mem[1].opcode = tp_PUT32;
 	tele_mem[1].args.put32.what = 0;
 	tele_mem[2].opcode = tp_CUTNPASTE;
@@ -317,7 +317,7 @@ feed_lions:
 	tele_mem[3].opcode = tp_CUTNPASTE;
 	tele_mem[3].args.cutnpaste.from = (unsigned char *)decision_o1;
 	tele_mem[3].args.cutnpaste.count =
-		((struct medusa_kclass_s*)decision_evtype->arg_kclass[0].ptr)->kobject_size;
+		decision_evtype->arg_kclass[0]->kobject_size;
 	if (decision_o1 == decision_o2) {
 		tele_mem[4].opcode = tp_HALT;
 	} else {
@@ -325,7 +325,7 @@ feed_lions:
 		tele_mem[4].args.cutnpaste.from =
 			(unsigned char *)decision_o2;
 		tele_mem[4].args.cutnpaste.count =
-			((struct medusa_kclass_s*)decision_evtype->arg_kclass[1].ptr)->kobject_size;
+			decision_evtype->arg_kclass[1]->kobject_size;
 		tele_mem[5].opcode = tp_HALT;
 	}
 #undef decision_evtype
@@ -335,7 +335,7 @@ feed_lions:
 
 do_fetch_update:
 	tele_mem[0].opcode = tp_PUTPtr;
-	tele_mem[0].args.putPtr.what.data = (uint64_t)0;
+	tele_mem[0].args.putPtr.what = 0;
 	tele_mem[1].opcode = tp_PUT32;
 	if (atomic_read(&send_fetch_or_update_answer) == MEDUSA_COMM_FETCH_REQUEST) { /* fetch */
 		tele_mem[1].args.put32.what = answ_kobj ?
@@ -344,9 +344,9 @@ do_fetch_update:
 		tele_mem[1].args.put32.what = MEDUSA_COMM_UPDATE_ANSWER;
 	}
 	tele_mem[2].opcode = tp_PUTPtr;
-	tele_mem[2].args.putPtr.what = answ_kclassid;
+	tele_mem[2].args.putPtr.what = (MCPptr_t)answ_kclassid;
 	tele_mem[3].opcode = tp_PUTPtr;
-	tele_mem[3].args.putPtr.what = answ_seq;
+	tele_mem[3].args.putPtr.what = (MCPptr_t)answ_seq;
 	if (atomic_read(&send_fetch_or_update_answer) == MEDUSA_COMM_UPDATE_REQUEST) {
 		tele_mem[4].opcode = tp_PUT32;
 		tele_mem[4].args.put32.what = answ_result;
@@ -376,7 +376,7 @@ do_announce:
 		kclasses_registered = p;
 
 		tele_mem[0].opcode = tp_PUTPtr;
-		tele_mem[0].args.putPtr.what.data = 0;
+		tele_mem[0].args.putPtr.what = 0;
 		tele_mem[1].opcode = tp_PUT32;
 		tele_mem[1].args.put32.what =
 			MEDUSA_COMM_KCLASSDEF;
@@ -395,7 +395,7 @@ do_announce:
 		evtypes_registered = p;
 
 		tele_mem[0].opcode = tp_PUTPtr;
-		tele_mem[0].args.putPtr.what.data = 0;
+		tele_mem[0].args.putPtr.what = 0;
 		tele_mem[1].opcode = tp_PUT32;
 		tele_mem[1].args.put32.what =
 			MEDUSA_COMM_EVTYPEDEF;
@@ -452,7 +452,7 @@ static ssize_t user_write(struct file *filp, const char *buf, size_t count, loff
 			if (recv_phase < sizeof(MCPptr_t))
 				continue;
 		}
-		if (recv_type.data == MEDUSA_COMM_AUTHANSWER) {
+		if (recv_type == MEDUSA_COMM_AUTHANSWER) {
 			int size = (2*sizeof(MCPptr_t)+ sizeof(uint16_t));
 			GET_UPTO(size); // TODO change !!!
 			if (recv_phase < size)
@@ -461,8 +461,8 @@ static ssize_t user_write(struct file *filp, const char *buf, size_t count, loff
 			barrier();
 			complete(&userspace_answer);
 			atomic_set(&currently_receiving, 0);
-		} else if (recv_type.data == MEDUSA_COMM_FETCH_REQUEST ||
-				recv_type.data == MEDUSA_COMM_UPDATE_REQUEST) {
+		} else if (recv_type == MEDUSA_COMM_FETCH_REQUEST ||
+				recv_type == MEDUSA_COMM_UPDATE_REQUEST) {
 			GET_UPTO(sizeof(MCPptr_t)*3);
 			if (recv_phase < sizeof(MCPptr_t)*3)
 				continue;
@@ -471,7 +471,7 @@ static ssize_t user_write(struct file *filp, const char *buf, size_t count, loff
 				*(struct medusa_kclass_s **)(recv_buf) // posibility to decrypt JK march 2015
 			);
 			if (!cl) {
-				MED_PRINTF(MODULENAME ": protocol error at write(): unknown kclass 0x%16llx!\n", (*(MCPptr_t*)(recv_buf)).data);
+				MED_PRINTF(MODULENAME ": protocol error at write(): unknown kclass 0x%p!\n", (void*)(*(MCPptr_t*)(recv_buf)));
 				atomic_set(&currently_receiving, 0);
 #ifdef ERRORS_CAUSE_SEGFAULT
 				return -EFAULT;
@@ -489,7 +489,7 @@ static ssize_t user_write(struct file *filp, const char *buf, size_t count, loff
 				med_put_kclass(answ_kclass);
 			}
 			answ_kclass = cl;
-			if (recv_type.data == MEDUSA_COMM_FETCH_REQUEST) {
+			if (recv_type == MEDUSA_COMM_FETCH_REQUEST) {
 				if (cl->fetch)
 					answ_kobj = cl->fetch((struct medusa_kobject_s *)
 								(recv_buf+sizeof(MCPptr_t)*2));
@@ -504,11 +504,11 @@ static ssize_t user_write(struct file *filp, const char *buf, size_t count, loff
 			}
 			answ_kclassid = (*(MCPptr_t*)(recv_buf));
 			answ_seq = *(((MCPptr_t*)(recv_buf))+1);
-			atomic_set(&send_fetch_or_update_answer, recv_type.data);
+			atomic_set(&send_fetch_or_update_answer, recv_type);
 
 			atomic_set(&currently_receiving, 0);
 		} else {
-			MED_PRINTF(MODULENAME ": protocol error at write(): unknown command %16llx!\n", recv_type.data);
+			MED_PRINTF(MODULENAME ": protocol error at write(): unknown command %llx!\n", (MCPptr_t)recv_type);
 			atomic_set(&currently_receiving, 0);
 #ifdef ERRORS_CAUSE_SEGFAULT
 				return -EFAULT;
@@ -554,7 +554,7 @@ static int user_open(struct inode *inode, struct file *file)
 
 	atomic_set(&currently_receiving, 0);
 	tele_mem[0].opcode = tp_PUTPtr;
-	tele_mem[0].args.putPtr.what.data = MEDUSA_COMM_GREETING;
+	tele_mem[0].args.putPtr.what = (MCPptr_t)MEDUSA_COMM_GREETING;
 	tele_mem[1].opcode = tp_HALT;
 	teleport_reset(&teleport, &(tele_mem[0]), to_user);
 

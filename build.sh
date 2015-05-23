@@ -1,7 +1,5 @@
 #!/bin/bash
 
-CONFIG_FILE="config.`uname -m`"
-
 if [[ "$1" == '-h' || "$1" == '--help' ]]; then
 	echo "$0 [--help] [--delete] [--clean] [--nogrub] [--noreboot]";
 	exit 0
@@ -43,11 +41,6 @@ sudo rm vmlinux 2> /dev/null
 
 sudo rm -rf ../linux-image-*.deb
 
-if [ -f .config ]; then
-    diff .config $CONFIG_FILE
-else
-    cp $CONFIG_FILE .config
-fi
 PROCESSORS=`cat /proc/cpuinfo | grep processor | wc -l`
 export CONCURRENCY_LEVEL=`expr $PROCESSORS + 1`
 #export CLEAN_SOURCE=no
@@ -75,7 +68,7 @@ echo $major.$minor >> myversioning
 
 temp=`mktemp XXXXXX`
 sudo cat /boot/grub/grub.cfg | while read line; do
-	if [[ "$line" = *linux*/boot/vmlinuz-*medusa* ]]; then
+	if [[ "$line" = */boot/vmlinuz-3.13.5* ]]; then
 		echo "$line" | sed -e 's/quiet/kgdboc=ttyS0,115200 kgdbwait/' >> $temp
 		echo $line |  sed -e 's/quiet/kgdboc=ttyS0,115200 kgdbwait/'
 	else
