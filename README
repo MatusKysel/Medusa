@@ -1,5 +1,5 @@
 Medusa DS9 Security System
-
+==========================
 
 Medusa is a package that improves the overall security of the Linux OS by
 extending the standard Linux (Unix) security architecture while preserving
@@ -14,7 +14,8 @@ server is properly configured, it can determine access rights within the system
 to a very fine level and do very good auditing.
 
 
-ARCHITECTURE
+Architecture
+------------
 
 Medusa consists of two basic parts: a small patch to the Linux
 kernel and a user space security daemon called "Constable". Constable is the
@@ -38,3 +39,11 @@ knowing this protocol and knowing that the kernel supports it, without worrying
 what's really happening in the kernel. Constable is only one example of such an
 authorization server. The protocol allows communication in the form of packets
 which carry all necessary data.
+
+Installation
+-----------
+Run the bash file:
+
+```
+build.sh
+```
